@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { API_URL, APP_URL } from '@/lib/config'
 
 type UserConfig = {
   id: number
@@ -41,7 +42,7 @@ export default function ConfiguracoesPage() {
     }
 
     try {
-      const res = await fetch('http://localhost:3000/users/me', {
+      const res = await fetch(`${API_URL}/users/me`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -76,11 +77,13 @@ export default function ConfiguracoesPage() {
     try {
       setUploading(true)
 
+      const token = localStorage.getItem('token')
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch('http://localhost:3000/upload', {
+      const res = await fetch(`${API_URL}/upload`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       })
 
@@ -104,11 +107,13 @@ export default function ConfiguracoesPage() {
     try {
       setUploading(true)
 
+      const token = localStorage.getItem('token')
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch('http://localhost:3000/upload', {
+      const res = await fetch(`${API_URL}/upload`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       })
 
@@ -144,7 +149,7 @@ export default function ConfiguracoesPage() {
     try {
       setSaving(true)
 
-      const res = await fetch('http://localhost:3000/users/me', {
+      const res = await fetch(`${API_URL}/users/me`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -353,7 +358,7 @@ export default function ConfiguracoesPage() {
           <div style={styles.previewBox}>
             <strong>Link público:</strong>
             <p style={{ ...styles.linkText, color: corPrimaria }}>
-              http://localhost:3001/cardapio/{slug || 'seu-slug'}
+              {APP_URL}/cardapio/{slug || 'seu-slug'}
             </p>
           </div>
 

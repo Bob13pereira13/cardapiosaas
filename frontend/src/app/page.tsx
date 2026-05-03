@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { API_URL } from '@/lib/config'
 
 export default function Home() {
   const [products, setProducts] = useState<any[]>([])
@@ -14,7 +15,7 @@ export default function Home() {
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const res = await fetch('http://localhost:3000/products', {
+    const res = await fetch(`${API_URL}/products`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -28,7 +29,7 @@ export default function Home() {
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const res = await fetch('http://localhost:3000/categories', {
+    const res = await fetch(`${API_URL}/categories`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -46,7 +47,7 @@ export default function Home() {
   async function handleCreate() {
     const token = localStorage.getItem('token')
 
-    await fetch('http://localhost:3000/products', {
+    await fetch(`${API_URL}/products`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +70,7 @@ export default function Home() {
   async function handleUpdate() {
     const token = localStorage.getItem('token')
 
-    await fetch(`http://localhost:3000/products/${editId}`, {
+    await fetch(`${API_URL}/products/${editId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +94,7 @@ export default function Home() {
   async function handleDelete(id: number) {
     const token = localStorage.getItem('token')
 
-    await fetch(`http://localhost:3000/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -11,7 +11,7 @@ import { JwtStrategyService } from './jwt-strategy/jwt-strategy.service';
     UsersModule,
     PassportModule,
     JwtModule.register({
-      secret: 'segredo-temporario',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '7d' },
     }),
   ],

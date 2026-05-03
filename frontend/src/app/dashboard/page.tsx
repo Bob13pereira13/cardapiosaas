@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { API_URL } from '@/lib/config'
 
 type Category = {
   id: number
@@ -35,7 +36,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const res = await fetch('http://localhost:3000/products', {
+    const res = await fetch(`${API_URL}/products`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
@@ -47,7 +48,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('token')
     if (!token) return
 
-    const res = await fetch('http://localhost:3000/categories', {
+    const res = await fetch(`${API_URL}/categories`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
@@ -70,11 +71,13 @@ export default function DashboardPage() {
     try {
       setUploading(true)
 
+      const token = localStorage.getItem('token')
       const formData = new FormData()
       formData.append('file', file)
 
-      const res = await fetch('http://localhost:3000/upload', {
+      const res = await fetch(`${API_URL}/upload`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       })
 
@@ -98,7 +101,7 @@ export default function DashboardPage() {
       return alert('Preencha nome, preço e categoria.')
     }
 
-    await fetch('http://localhost:3000/products', {
+    await fetch(`${API_URL}/products`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -124,7 +127,7 @@ export default function DashboardPage() {
     const token = localStorage.getItem('token')
     if (!token || !editId) return
 
-    await fetch(`http://localhost:3000/products/${editId}`, {
+    await fetch(`${API_URL}/products/${editId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -154,7 +157,7 @@ export default function DashboardPage() {
     const confirmar = confirm('Tem certeza que deseja excluir este produto?')
     if (!confirmar) return
 
-    await fetch(`http://localhost:3000/products/${id}`, {
+    await fetch(`${API_URL}/products/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -170,7 +173,7 @@ export default function DashboardPage() {
       return alert('Digite o nome da categoria.')
     }
 
-    await fetch('http://localhost:3000/categories', {
+    await fetch(`${API_URL}/categories`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -191,7 +194,7 @@ export default function DashboardPage() {
       return alert('Digite o nome da categoria.')
     }
 
-    await fetch(`http://localhost:3000/categories/${editCategoryId}`, {
+    await fetch(`${API_URL}/categories/${editCategoryId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -217,7 +220,7 @@ export default function DashboardPage() {
 
     if (!confirmar) return
 
-    await fetch(`http://localhost:3000/categories/${id}`, {
+    await fetch(`${API_URL}/categories/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })

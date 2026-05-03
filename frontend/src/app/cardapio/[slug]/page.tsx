@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
+import { API_URL } from '@/lib/config';
 
 type Product = {
   id: number;
@@ -91,7 +92,7 @@ export default function CardapioPage({
   useEffect(() => {
     async function carregar() {
       try {
-        const res = await fetch(`http://localhost:3000/public/cardapio/${slug}`);
+        const res = await fetch(`${API_URL}/public/cardapio/${slug}`);
 
         if (!res.ok) throw new Error('Erro ao buscar cardápio');
 
