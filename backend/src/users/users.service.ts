@@ -64,9 +64,9 @@ export class UsersService {
   async updateMe(
     userId: number,
     data: {
-      nome: string;
-      whatsapp: string;
-      slug: string;
+      nome?: string;
+      whatsapp?: string;
+      slug?: string;
       logo?: string;
       banner?: string;
       aberto?: boolean;
@@ -75,7 +75,7 @@ export class UsersService {
       corPrimaria?: string;
     }
   ) {
-    const slugFormatado = this.gerarSlug(data.slug || data.nome);
+    const slugFormatado = this.gerarSlug(data.slug || data.nome || '');
 
     const slugExistente = await this.prisma.user.findFirst({
       where: {

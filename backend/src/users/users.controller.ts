@@ -1,6 +1,8 @@
 import { Controller, Post, Body, Patch, UseGuards, Request, Get } from '@nestjs/common';
-import { UsersService } from './users.service';
 import { AuthGuard } from '@nestjs/passport';
+import { UsersService } from './users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 
 @Controller('users')
 export class UsersController {
@@ -12,7 +14,7 @@ export class UsersController {
   }
 
   @Post()
-  create(@Body() data: { nome: string; email: string; password: string }) {
+  create(@Body() data: CreateUserDto) {
     return this.usersService.create(data);
   }
 
@@ -24,10 +26,7 @@ export class UsersController {
 
   @UseGuards(AuthGuard('jwt'))
   @Patch('me')
-  updateMe(
-    @Request() req,
-    @Body() body: { nome: string; whatsapp: string; slug: string }
-  ) {
+  updateMe(@Request() req, @Body() body: UpdateMeDto) {
     return this.usersService.updateMe(req.user.id, body);
   }
 }
