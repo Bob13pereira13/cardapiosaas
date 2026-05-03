@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                Int        @id @default(autoincrement())
+  nome              String
+  email             String     @unique
+  password          String
+  createdAt         DateTime   @default(now())
+  whatsapp          String?
+  slug              String?    @unique
+  logo              String?
+  banner            String?    // ✅ ADICIONADO
+  aberto            Boolean    @default(true) // ✅ ADICIONADO
+  horarioAbertura   String?    // ✅ ADICIONADO
+  horarioFechamento String?    // ✅ ADICIONADO
+  corPrimaria       String?    @default("#16a34a") // ✅ ADICIONADO
+
+  categories Category[]
+  products   Product[]
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  nome     String
+
+  userId   Int
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  products Product[]
+}
+
+model Product {
+  id         Int       @id @default(autoincrement())
+  nome       String
+  preco      Float
+  imagem     String?
+
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+}
