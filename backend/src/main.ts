@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import * as express from 'express';
 import { join } from 'path';
@@ -16,6 +17,8 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
+
+  app.use(helmet());
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3001',
