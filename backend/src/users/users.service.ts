@@ -61,6 +61,29 @@ export class UsersService {
     });
   }
 
+  async setResetToken(userId: number, token: string, expiry: Date) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { resetToken: token, resetTokenExpiry: expiry },
+    });
+  }
+
+  async findByResetToken(token: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpiry: { gt: new Date() },
+      },
+    });
+  }
+
+  async updatePassword(userId: number, hashedPassword: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword, resetToken: null, resetTokenExpiry: null },
+    });
+  }
+
   async updateMe(
     userId: number,
     data: {
@@ -75,19 +98,21 @@ export class UsersService {
       corPrimaria?: string;
     }
   ) {
-    const slugFormatado = this.gerarSlug(data.slug || data.nome || '');
+    let slugFormatado: string | undefined;
 
-    const slugExistente = await this.prisma.user.findFirst({
-      where: {
-        slug: slugFormatado,
-        NOT: {
-          id: userId,
+    if (data.slug !== undefined || data.nome !== undefined) {
+      slugFormatado = this.gerarSlug(data.slug || data.nome || '');
+
+      const slugExistente = await this.prisma.user.findFirst({
+        where: {
+          slug: slugFormatado,
+          NOT: { id: userId },
         },
-      },
-    });
+      });
 
-    if (slugExistente) {
-      throw new BadRequestException('Este slug já está em uso.');
+      if (slugExistente) {
+        throw new BadRequestException('Este slug já está em uso.');
+      }
     }
 
     return this.prisma.user.update({

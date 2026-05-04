@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { API_URL } from '@/lib/config'
+import { getToken, handleUnauthorized } from '@/lib/auth'
 
 type Category = {
   id: number
@@ -31,26 +32,37 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalProducts, setTotalProducts] = useState(0)
+  const LIMIT = 20
 
-  async function loadProducts() {
-    const token = localStorage.getItem('token')
-    if (!token) return
+  async function loadProducts(p = page) {
+    const token = getToken()
+    if (!token) { window.location.href = '/login'; return }
 
-    const res = await fetch(`${API_URL}/products`, {
+    const res = await fetch(`${API_URL}/products?page=${p}&limit=${LIMIT}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
-    const data = await res.json()
-    setProducts(data)
+    if (handleUnauthorized(res)) return
+
+    const result = await res.json()
+    setProducts(result.data)
+    setTotalPages(result.totalPages)
+    setTotalProducts(result.total)
+    setPage(p)
   }
 
   async function loadCategories() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token) return
 
     const res = await fetch(`${API_URL}/categories`, {
       headers: { Authorization: `Bearer ${token}` },
     })
+
+    if (handleUnauthorized(res)) return
 
     const data = await res.json()
     setCategories(data)
@@ -71,7 +83,7 @@ export default function DashboardPage() {
     try {
       setUploading(true)
 
-      const token = localStorage.getItem('token')
+      const token = getToken()
       const formData = new FormData()
       formData.append('file', file)
 
@@ -94,7 +106,7 @@ export default function DashboardPage() {
   }
 
   async function handleCreate() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token) return alert('Você precisa estar logado.')
 
     if (!nome || !preco || !categoryId) {
@@ -124,7 +136,7 @@ export default function DashboardPage() {
   }
 
   async function handleUpdate() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token || !editId) return
 
     await fetch(`${API_URL}/products/${editId}`, {
@@ -151,7 +163,7 @@ export default function DashboardPage() {
   }
 
   async function handleDelete(id: number) {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token) return
 
     const confirmar = confirm('Tem certeza que deseja excluir este produto?')
@@ -166,7 +178,7 @@ export default function DashboardPage() {
   }
 
   async function handleCreateCategory() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token) return alert('Você precisa estar logado.')
 
     if (!nomeCategoria) {
@@ -187,7 +199,7 @@ export default function DashboardPage() {
   }
 
   async function handleUpdateCategory() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token || !editCategoryId) return
 
     if (!nomeCategoria) {
@@ -211,7 +223,7 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteCategory(id: number) {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (!token) return
 
     const confirmar = confirm(
@@ -268,7 +280,7 @@ export default function DashboardPage() {
         <div style={styles.cards}>
           <div style={styles.card}>
             <span style={styles.cardLabel}>Produtos</span>
-            <strong style={styles.cardValue}>{products.length}</strong>
+            <strong style={styles.cardValue}>{totalProducts}</strong>
           </div>
 
           <div style={styles.card}>
@@ -431,6 +443,28 @@ export default function DashboardPage() {
 
           {!loading && products.length === 0 && (
             <p style={styles.empty}>Nenhum produto cadastrado ainda.</p>
+          )}
+
+          {totalPages > 1 && (
+            <div style={styles.pagination}>
+              <button
+                style={{ ...styles.pageButton, opacity: page <= 1 ? 0.4 : 1 }}
+                onClick={() => loadProducts(page - 1)}
+                disabled={page <= 1}
+              >
+                ← Anterior
+              </button>
+              <span style={styles.pageInfo}>
+                Página {page} de {totalPages}
+              </span>
+              <button
+                style={{ ...styles.pageButton, opacity: page >= totalPages ? 0.4 : 1 }}
+                onClick={() => loadProducts(page + 1)}
+                disabled={page >= totalPages}
+              >
+                Próxima →
+              </button>
+            </div>
           )}
 
           <div style={styles.productList}>
@@ -740,5 +774,26 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     cursor: 'pointer',
     fontWeight: 'bold',
+  },
+  pagination: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 18,
+  },
+  pageButton: {
+    border: '1px solid #d1d5db',
+    background: '#fff',
+    color: '#111827',
+    padding: '8px 16px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  pageInfo: {
+    color: '#6b7280',
+    fontSize: 14,
   },
 }

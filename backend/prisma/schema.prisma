@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -19,7 +20,10 @@ model User {
   aberto            Boolean    @default(true) // ✅ ADICIONADO
   horarioAbertura   String?    // ✅ ADICIONADO
   horarioFechamento String?    // ✅ ADICIONADO
-  corPrimaria       String?    @default("#16a34a") // ✅ ADICIONADO
+  corPrimaria       String?    @default("#16a34a")
+
+  resetToken        String?
+  resetTokenExpiry  DateTime?
 
   categories Category[]
   products   Product[]

@@ -8,20 +8,17 @@ import {
   Delete,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PaginateProductsDto } from './dto/paginate-products.dto';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
-
-  @Get('public/:userId')
-  findPublic(@Param('userId') userId: string) {
-    return this.productsService.findByUser(Number(userId));
-  }
 
   @UseGuards(AuthGuard('jwt'))
   @Post()
@@ -31,8 +28,8 @@ export class ProductsController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get()
-  findAll(@Request() req) {
-    return this.productsService.findByUser(req.user.id);
+  findAll(@Request() req, @Query() query: PaginateProductsDto) {
+    return this.productsService.findByUser(req.user.id, query.page, query.limit);
   }
 
   @UseGuards(AuthGuard('jwt'))

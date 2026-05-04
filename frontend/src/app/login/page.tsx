@@ -2,11 +2,17 @@
 
 import { useState } from 'react'
 import { API_URL } from '@/lib/config'
+import { getToken } from '@/lib/auth'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Redireciona se já está autenticado
+  if (typeof window !== 'undefined' && getToken()) {
+    window.location.href = '/dashboard'
+  }
 
   async function handleLogin() {
     if (!email || !password) {
@@ -70,6 +76,10 @@ export default function LoginPage() {
         <button onClick={handleLogin} style={styles.button}>
           {loading ? 'Entrando...' : 'Entrar'}
         </button>
+
+        <a href="/forgot-password" style={styles.forgotLink}>
+          Esqueci minha senha
+        </a>
       </section>
     </main>
   )
@@ -121,5 +131,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'bold',
     cursor: 'pointer',
     marginTop: 8,
+  },
+  forgotLink: {
+    display: 'block',
+    textAlign: 'center',
+    marginTop: 16,
+    color: '#6b7280',
+    fontSize: 14,
+    textDecoration: 'none',
   },
 }

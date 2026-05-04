@@ -23,13 +23,27 @@ export class ProductsService {
     });
   }
 
-  findByUser(userId: number) {
-    return this.prisma.product.findMany({
-      where: { userId },
-      include: {
-        category: true,
-      },
-    });
+  async findByUser(userId: number, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where: { userId },
+        include: { category: true },
+        skip,
+        take: limit,
+        orderBy: { id: 'desc' },
+      }),
+      this.prisma.product.count({ where: { userId } }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async update(
@@ -43,20 +57,14 @@ export class ProductsService {
     },
   ) {
     return this.prisma.product.updateMany({
-      where: {
-        id,
-        userId,
-      },
+      where: { id, userId },
       data,
     });
   }
 
   async delete(id: number, userId: number) {
     return this.prisma.product.deleteMany({
-      where: {
-        id,
-        userId,
-      },
+      where: { id, userId },
     });
   }
 }

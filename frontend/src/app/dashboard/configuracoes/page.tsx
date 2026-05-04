@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { API_URL, APP_URL } from '@/lib/config'
+import { getToken, handleUnauthorized } from '@/lib/auth'
 
 type UserConfig = {
   id: number
@@ -33,7 +34,7 @@ export default function ConfiguracoesPage() {
   const [uploading, setUploading] = useState(false)
 
   async function carregarUsuario() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
 
     if (!token) {
       alert('Você precisa estar logado.')
@@ -47,6 +48,8 @@ export default function ConfiguracoesPage() {
           Authorization: `Bearer ${token}`,
         },
       })
+
+      if (handleUnauthorized(res)) return
 
       const data = await res.json()
 
@@ -77,7 +80,7 @@ export default function ConfiguracoesPage() {
     try {
       setUploading(true)
 
-      const token = localStorage.getItem('token')
+      const token = getToken()
       const formData = new FormData()
       formData.append('file', file)
 
@@ -107,7 +110,7 @@ export default function ConfiguracoesPage() {
     try {
       setUploading(true)
 
-      const token = localStorage.getItem('token')
+      const token = getToken()
       const formData = new FormData()
       formData.append('file', file)
 
@@ -134,7 +137,7 @@ export default function ConfiguracoesPage() {
   }
 
   async function salvarConfiguracoes() {
-    const token = localStorage.getItem('token')
+    const token = getToken()
 
     if (!token) {
       alert('Você precisa estar logado.')

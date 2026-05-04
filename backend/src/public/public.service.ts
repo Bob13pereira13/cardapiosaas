@@ -27,9 +27,8 @@ export class PublicService {
             id: true,
             nome: true,
             products: {
-              orderBy: {
-                id: 'asc',
-              },
+              orderBy: { id: 'asc' },
+              take: 100,
               select: {
                 id: true,
                 nome: true,
