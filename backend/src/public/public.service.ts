@@ -9,10 +9,13 @@ export class PublicService {
     const productSelect = {
       id: true,
       nome: true,
+      descricao: true,
       preco: true,
       imagem: true,
       categoryId: true,
     };
+
+    const onlyAvailable = { disponivel: true };
 
     const user = await this.prisma.user.findFirst({
       where: { slug },
@@ -33,6 +36,7 @@ export class PublicService {
             id: true,
             nome: true,
             products: {
+              where: onlyAvailable,
               orderBy: { id: 'asc' },
               take: 100,
               select: productSelect,
@@ -47,15 +51,17 @@ export class PublicService {
     }
 
     const uncategorized = await this.prisma.product.findMany({
-      where: { userId: user.id, categoryId: null },
+      where: { userId: user.id, categoryId: null, disponivel: true },
       orderBy: { id: 'asc' },
       take: 100,
       select: productSelect,
     });
 
-    const categories = uncategorized.length > 0
+    const allCategories = uncategorized.length > 0
       ? [...user.categories, { id: 0, nome: 'Outros', products: uncategorized }]
       : user.categories;
+
+    const categories = allCategories.filter(c => c.products.length > 0);
 
     const { id: _id, ...publicFields } = user;
     return { ...publicFields, categories };

@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -16,6 +17,11 @@ export class CreateProductDto {
   @MaxLength(100)
   nome: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  descricao?: string;
+
   @IsNumber({}, { message: 'Preço deve ser um número.' })
   @Min(0, { message: 'Preço não pode ser negativo.' })
   preco: number;
@@ -23,6 +29,10 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imagem?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  disponivel?: boolean;
 
   @IsOptional()
   @IsInt()

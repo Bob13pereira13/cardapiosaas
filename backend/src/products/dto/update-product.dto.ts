@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsInt,
   IsNumber,
   IsOptional,
@@ -16,6 +17,11 @@ export class UpdateProductDto {
   nome?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  descricao?: string;
+
+  @IsOptional()
   @IsNumber({}, { message: 'Preço deve ser um número.' })
   @Min(0, { message: 'Preço não pode ser negativo.' })
   preco?: number;
@@ -23,6 +29,10 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   imagem?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  disponivel?: boolean;
 
   @IsOptional()
   @IsInt()

@@ -8,11 +8,6 @@ import { UpdateMeDto } from './dto/update-me.dto';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Get('teste')
-  teste() {
-    return { ok: true, rota: 'users funcionando' };
-  }
-
   @Post()
   create(@Body() data: CreateUserDto) {
     return this.usersService.create(data);

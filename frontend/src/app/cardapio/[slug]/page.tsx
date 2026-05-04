@@ -6,6 +6,7 @@ import { API_URL } from '@/lib/config';
 type Product = {
   id: number;
   nome: string;
+  descricao?: string | null;
   preco: number;
   imagem?: string | null;
 };
@@ -273,9 +274,9 @@ export default function CardapioPage({
               <article key={product.id} style={styles.productCard}>
                 <div style={styles.productInfo}>
                   <h3 style={styles.productName}>{product.nome}</h3>
-                  <p style={styles.description}>
-                    Produto disponível para pedido.
-                  </p>
+                  {product.descricao && (
+                    <p style={styles.description}>{product.descricao}</p>
+                  )}
 
                   <strong style={{ ...styles.price, color: corPrimaria }}>
                     {formatarPreco(product.preco)}

@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -42,8 +41,10 @@ model Category {
 model Product {
   id         Int       @id @default(autoincrement())
   nome       String
+  descricao  String?
   preco      Float
   imagem     String?
+  disponivel Boolean   @default(true)
 
   userId     Int
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)

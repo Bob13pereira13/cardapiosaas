@@ -12,8 +12,10 @@ type Category = {
 type Product = {
   id: number
   nome: string
+  descricao?: string
   preco: number
   imagem?: string
+  disponivel: boolean
   category?: Category
 }
 
@@ -22,8 +24,10 @@ export default function DashboardPage() {
   const [categories, setCategories] = useState<Category[]>([])
 
   const [nome, setNome] = useState('')
+  const [descricao, setDescricao] = useState('')
   const [preco, setPreco] = useState('')
   const [imagem, setImagem] = useState('')
+  const [disponivel, setDisponivel] = useState(true)
   const [categoryId, setCategoryId] = useState('')
   const [editId, setEditId] = useState<number | null>(null)
 
@@ -69,20 +73,18 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    async function carregarDados() {
+    async function init() {
       setLoading(true)
       await loadProducts()
       await loadCategories()
       setLoading(false)
     }
-
-    carregarDados()
+    init()
   }, [])
 
   async function handleUploadImagem(file: File) {
     try {
       setUploading(true)
-
       const token = getToken()
       const formData = new FormData()
       formData.append('file', file)
@@ -93,12 +95,10 @@ export default function DashboardPage() {
         body: formData,
       })
 
-      if (!res.ok) throw new Error('Erro ao enviar imagem')
-
+      if (!res.ok) throw new Error()
       const data = await res.json()
       setImagem(data.url)
-    } catch (error) {
-      console.error(error)
+    } catch {
       alert('Erro ao enviar imagem.')
     } finally {
       setUploading(false)
@@ -108,30 +108,22 @@ export default function DashboardPage() {
   async function handleCreate() {
     const token = getToken()
     if (!token) return alert('Você precisa estar logado.')
-
-    if (!nome || !preco || !categoryId) {
-      return alert('Preencha nome, preço e categoria.')
-    }
+    if (!nome || !preco) return alert('Preencha nome e preço.')
 
     await fetch(`${API_URL}/products`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         nome,
+        descricao: descricao || undefined,
         preco: Number(preco),
-        imagem,
-        categoryId: Number(categoryId),
+        imagem: imagem || undefined,
+        disponivel,
+        categoryId: categoryId ? Number(categoryId) : undefined,
       }),
     })
 
-    setNome('')
-    setPreco('')
-    setImagem('')
-    setCategoryId('')
-
+    cancelarEdicao()
     await loadProducts()
   }
 
@@ -141,33 +133,38 @@ export default function DashboardPage() {
 
     await fetch(`${API_URL}/products/${editId}`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         nome,
+        descricao: descricao || undefined,
         preco: Number(preco),
-        imagem,
-        categoryId: Number(categoryId),
+        imagem: imagem || undefined,
+        disponivel,
+        categoryId: categoryId ? Number(categoryId) : undefined,
       }),
     })
 
-    setEditId(null)
-    setNome('')
-    setPreco('')
-    setImagem('')
-    setCategoryId('')
-
+    cancelarEdicao()
     await loadProducts()
+  }
+
+  async function toggleDisponivel(product: Product) {
+    const token = getToken()
+    if (!token) return
+
+    await fetch(`${API_URL}/products/${product.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ disponivel: !product.disponivel }),
+    })
+
+    await loadProducts(page)
   }
 
   async function handleDelete(id: number) {
     const token = getToken()
     if (!token) return
-
-    const confirmar = confirm('Tem certeza que deseja excluir este produto?')
-    if (!confirmar) return
+    if (!confirm('Excluir este produto?')) return
 
     await fetch(`${API_URL}/products/${id}`, {
       method: 'DELETE',
@@ -180,17 +177,11 @@ export default function DashboardPage() {
   async function handleCreateCategory() {
     const token = getToken()
     if (!token) return alert('Você precisa estar logado.')
-
-    if (!nomeCategoria) {
-      return alert('Digite o nome da categoria.')
-    }
+    if (!nomeCategoria) return alert('Digite o nome da categoria.')
 
     await fetch(`${API_URL}/categories`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ nome: nomeCategoria }),
     })
 
@@ -201,23 +192,16 @@ export default function DashboardPage() {
   async function handleUpdateCategory() {
     const token = getToken()
     if (!token || !editCategoryId) return
-
-    if (!nomeCategoria) {
-      return alert('Digite o nome da categoria.')
-    }
+    if (!nomeCategoria) return alert('Digite o nome da categoria.')
 
     await fetch(`${API_URL}/categories/${editCategoryId}`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ nome: nomeCategoria }),
     })
 
     setEditCategoryId(null)
     setNomeCategoria('')
-
     await loadCategories()
     await loadProducts()
   }
@@ -225,12 +209,7 @@ export default function DashboardPage() {
   async function handleDeleteCategory(id: number) {
     const token = getToken()
     if (!token) return
-
-    const confirmar = confirm(
-      'Tem certeza que deseja excluir esta categoria? Produtos vinculados podem ser afetados.'
-    )
-
-    if (!confirmar) return
+    if (!confirm('Excluir esta categoria? Produtos vinculados ficam sem categoria.')) return
 
     await fetch(`${API_URL}/categories/${id}`, {
       method: 'DELETE',
@@ -244,556 +223,502 @@ export default function DashboardPage() {
   function cancelarEdicao() {
     setEditId(null)
     setNome('')
+    setDescricao('')
     setPreco('')
     setImagem('')
+    setDisponivel(true)
     setCategoryId('')
   }
 
-  function cancelarEdicaoCategoria() {
-    setEditCategoryId(null)
-    setNomeCategoria('')
-  }
-
   return (
-    <main style={styles.page}>
-      <aside style={styles.sidebar}>
-        <h2 style={styles.logo}>Cardápio SaaS</h2>
+    <div>
+      <div style={styles.cards}>
+        <div style={styles.card}>
+          <span style={styles.cardLabel}>Total de produtos</span>
+          <strong style={styles.cardValue}>{totalProducts}</strong>
+        </div>
+        <div style={styles.card}>
+          <span style={styles.cardLabel}>Categorias</span>
+          <strong style={styles.cardValue}>{categories.length}</strong>
+        </div>
+        <div style={styles.card}>
+          <span style={styles.cardLabel}>Status</span>
+          <strong style={{ ...styles.cardValue, color: '#16a34a', fontSize: 18 }}>Online</strong>
+        </div>
+      </div>
 
-        <nav style={styles.nav}>
-          <a href="/dashboard" style={styles.navItem}>Dashboard</a>
-          <a href="/dashboard" style={styles.navItem}>Produtos</a>
-          <a href="/dashboard" style={styles.navItem}>Categorias</a>
-          <a href="/dashboard/configuracoes" style={styles.navItem}>Configurações</a>
-        </nav>
-      </aside>
+      {/* Formulário de produto */}
+      <section style={styles.panel}>
+        <h2 style={styles.panelTitle}>
+          {editId ? 'Editar produto' : 'Adicionar produto'}
+        </h2>
 
-      <section style={styles.content}>
-        <header style={styles.header}>
-          <div>
-            <h1 style={styles.title}>Painel do Restaurante</h1>
-            <p style={styles.subtitle}>
-              Gerencie produtos, preços, imagens e categorias.
-            </p>
-          </div>
-        </header>
+        <div style={styles.formGrid}>
+          <input
+            style={styles.input}
+            placeholder="Nome do produto *"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+          />
 
-        <div style={styles.cards}>
-          <div style={styles.card}>
-            <span style={styles.cardLabel}>Produtos</span>
-            <strong style={styles.cardValue}>{totalProducts}</strong>
-          </div>
+          <input
+            style={styles.input}
+            placeholder="Preço *"
+            type="number"
+            min="0"
+            step="0.01"
+            value={preco}
+            onChange={(e) => setPreco(e.target.value)}
+          />
 
-          <div style={styles.card}>
-            <span style={styles.cardLabel}>Categorias</span>
-            <strong style={styles.cardValue}>{categories.length}</strong>
-          </div>
+          <select
+            style={styles.input}
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+          >
+            <option value="">Sem categoria</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>{cat.nome}</option>
+            ))}
+          </select>
 
-          <div style={styles.card}>
-            <span style={styles.cardLabel}>Status</span>
-            <strong style={styles.cardValue}>Online</strong>
-          </div>
+          <textarea
+            style={{ ...styles.input, gridColumn: '1 / -1', resize: 'vertical', minHeight: 72 }}
+            placeholder="Descrição do produto (opcional)"
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+            maxLength={500}
+          />
         </div>
 
-        <section style={styles.formPanel}>
-          <h2 style={styles.panelTitle}>
-            {editId ? 'Editar produto' : 'Adicionar produto'}
-          </h2>
-
-          <div style={styles.formGrid}>
+        <div style={styles.uploadBox}>
+          <div>
+            <strong>Imagem do produto</strong>
+            <p style={styles.uploadText}>Selecione do computador ou cole uma URL abaixo.</p>
             <input
-              style={styles.input}
-              placeholder="Nome do produto"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-            />
-
-            <input
-              style={styles.input}
-              placeholder="Preço"
-              value={preco}
-              onChange={(e) => setPreco(e.target.value)}
-            />
-
-            <input
-              style={styles.input}
+              style={{ ...styles.input, marginTop: 8 }}
               placeholder="URL da imagem"
               value={imagem}
               onChange={(e) => setImagem(e.target.value)}
             />
-
-            <select
-              style={styles.input}
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">Selecione uma categoria</option>
-
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={styles.uploadBox}>
-            <div>
-              <strong>Imagem do produto</strong>
-              <p style={styles.uploadText}>
-                Selecione uma imagem do computador ou cole uma URL no campo acima.
-              </p>
-
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) handleUploadImagem(file)
-                }}
-              />
-
-              {uploading && <p style={styles.uploadText}>Enviando imagem...</p>}
-            </div>
-
-            {imagem ? (
-              <img src={imagem} style={styles.preview} />
-            ) : (
-              <div style={styles.previewFallback}>Preview</div>
-            )}
-          </div>
-
-          <div style={styles.actions}>
-            <button
-              onClick={editId ? handleUpdate : handleCreate}
-              style={styles.primaryButton}
-            >
-              {editId ? 'Salvar edição' : 'Criar produto'}
-            </button>
-
-            {editId && (
-              <button onClick={cancelarEdicao} style={styles.secondaryButton}>
-                Cancelar
-              </button>
-            )}
-          </div>
-        </section>
-
-        <section style={styles.panel}>
-          <h2 style={styles.panelTitle}>
-            {editCategoryId ? 'Editar categoria' : 'Adicionar categoria'}
-          </h2>
-
-          <div style={styles.categoryForm}>
             <input
-              style={styles.input}
-              placeholder="Nome da categoria"
-              value={nomeCategoria}
-              onChange={(e) => setNomeCategoria(e.target.value)}
+              type="file"
+              accept="image/*"
+              style={{ marginTop: 8 }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadImagem(f) }}
             />
+            {uploading && <p style={styles.uploadText}>Enviando...</p>}
+          </div>
 
-            <button
-              onClick={editCategoryId ? handleUpdateCategory : handleCreateCategory}
-              style={styles.primaryButton}
-            >
-              {editCategoryId ? 'Salvar categoria' : 'Criar categoria'}
+          {imagem
+            ? <img src={imagem} style={styles.preview} alt="preview" />
+            : <div style={styles.previewFallback}>Preview</div>
+          }
+        </div>
+
+        <label style={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={disponivel}
+            onChange={(e) => setDisponivel(e.target.checked)}
+            style={{ marginRight: 8 }}
+          />
+          Produto disponível (visível no cardápio)
+        </label>
+
+        <div style={styles.actions}>
+          <button onClick={editId ? handleUpdate : handleCreate} style={styles.primaryButton}>
+            {editId ? 'Salvar edição' : 'Criar produto'}
+          </button>
+          {editId && (
+            <button onClick={cancelarEdicao} style={styles.secondaryButton}>
+              Cancelar
             </button>
-
-            {editCategoryId && (
-              <button
-                onClick={cancelarEdicaoCategoria}
-                style={styles.secondaryButton}
-              >
-                Cancelar
-              </button>
-            )}
-          </div>
-
-          <div style={styles.productList}>
-            {categories.map((cat) => (
-              <div key={cat.id} style={styles.productItem}>
-                <strong style={styles.productName}>{cat.nome}</strong>
-
-                <div style={styles.productRight}>
-                  <button
-                    style={styles.editButton}
-                    onClick={() => {
-                      setEditCategoryId(cat.id)
-                      setNomeCategoria(cat.nome)
-                    }}
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    style={styles.deleteButton}
-                    onClick={() => handleDeleteCategory(cat.id)}
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section style={styles.panel}>
-          <h2 style={styles.panelTitle}>Produtos cadastrados</h2>
-
-          {loading && <p style={styles.empty}>Carregando produtos...</p>}
-
-          {!loading && products.length === 0 && (
-            <p style={styles.empty}>Nenhum produto cadastrado ainda.</p>
           )}
-
-          {totalPages > 1 && (
-            <div style={styles.pagination}>
-              <button
-                style={{ ...styles.pageButton, opacity: page <= 1 ? 0.4 : 1 }}
-                onClick={() => loadProducts(page - 1)}
-                disabled={page <= 1}
-              >
-                ← Anterior
-              </button>
-              <span style={styles.pageInfo}>
-                Página {page} de {totalPages}
-              </span>
-              <button
-                style={{ ...styles.pageButton, opacity: page >= totalPages ? 0.4 : 1 }}
-                onClick={() => loadProducts(page + 1)}
-                disabled={page >= totalPages}
-              >
-                Próxima →
-              </button>
-            </div>
-          )}
-
-          <div style={styles.productList}>
-            {products.map((product) => (
-              <div key={product.id} style={styles.productItem}>
-                <div style={styles.productInfo}>
-                  {product.imagem ? (
-                    <img src={product.imagem} style={styles.thumb} />
-                  ) : (
-                    <div style={styles.thumbFallback}>
-                      {product.nome.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-
-                  <div>
-                    <strong style={styles.productName}>{product.nome}</strong>
-                    <p style={styles.productMeta}>
-                      Categoria: {product.category?.nome || 'Sem categoria'}
-                    </p>
-                  </div>
-                </div>
-
-                <div style={styles.productRight}>
-                  <strong style={styles.price}>
-                    R$ {product.preco.toFixed(2).replace('.', ',')}
-                  </strong>
-
-                  <button
-                    style={styles.editButton}
-                    onClick={() => {
-                      setEditId(product.id)
-                      setNome(product.nome)
-                      setPreco(product.preco.toString())
-                      setImagem(product.imagem || '')
-                      setCategoryId(product.category?.id?.toString() || '')
-                    }}
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    style={styles.deleteButton}
-                    onClick={() => handleDelete(product.id)}
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        </div>
       </section>
-    </main>
+
+      {/* Lista de produtos */}
+      <section style={styles.panel}>
+        <h2 style={styles.panelTitle}>Produtos cadastrados</h2>
+
+        {loading && <p style={styles.empty}>Carregando...</p>}
+        {!loading && products.length === 0 && (
+          <p style={styles.empty}>Nenhum produto cadastrado ainda.</p>
+        )}
+
+        {totalPages > 1 && (
+          <div style={styles.pagination}>
+            <button
+              style={{ ...styles.pageButton, opacity: page <= 1 ? 0.4 : 1 }}
+              onClick={() => loadProducts(page - 1)}
+              disabled={page <= 1}
+            >
+              ← Anterior
+            </button>
+            <span style={styles.pageInfo}>Página {page} de {totalPages}</span>
+            <button
+              style={{ ...styles.pageButton, opacity: page >= totalPages ? 0.4 : 1 }}
+              onClick={() => loadProducts(page + 1)}
+              disabled={page >= totalPages}
+            >
+              Próxima →
+            </button>
+          </div>
+        )}
+
+        <div style={styles.productList}>
+          {products.map((product) => (
+            <div
+              key={product.id}
+              style={{ ...styles.productItem, opacity: product.disponivel ? 1 : 0.55 }}
+            >
+              <div style={styles.productInfo}>
+                {product.imagem
+                  ? <img src={product.imagem} style={styles.thumb} alt={product.nome} />
+                  : <div style={styles.thumbFallback}>{product.nome.charAt(0).toUpperCase()}</div>
+                }
+                <div>
+                  <strong style={styles.productName}>{product.nome}</strong>
+                  {product.descricao && (
+                    <p style={styles.productMeta}>{product.descricao}</p>
+                  )}
+                  <p style={styles.productMeta}>
+                    {product.category?.nome || 'Sem categoria'}
+                    {' · '}
+                    <span style={{ color: product.disponivel ? '#16a34a' : '#ef4444', fontWeight: 'bold' }}>
+                      {product.disponivel ? 'Disponível' : 'Indisponível'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div style={styles.productRight}>
+                <strong style={styles.price}>
+                  R$ {product.preco.toFixed(2).replace('.', ',')}
+                </strong>
+
+                <button
+                  style={{ ...styles.toggleButton, background: product.disponivel ? '#f3f4f6' : '#dcfce7', color: product.disponivel ? '#6b7280' : '#166534' }}
+                  onClick={() => toggleDisponivel(product)}
+                  title={product.disponivel ? 'Marcar como indisponível' : 'Marcar como disponível'}
+                >
+                  {product.disponivel ? 'Pausar' : 'Ativar'}
+                </button>
+
+                <button
+                  style={styles.editButton}
+                  onClick={() => {
+                    setEditId(product.id)
+                    setNome(product.nome)
+                    setDescricao(product.descricao || '')
+                    setPreco(product.preco.toString())
+                    setImagem(product.imagem || '')
+                    setDisponivel(product.disponivel)
+                    setCategoryId(product.category?.id?.toString() || '')
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                >
+                  Editar
+                </button>
+
+                <button style={styles.deleteButton} onClick={() => handleDelete(product.id)}>
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Categorias */}
+      <section style={styles.panel}>
+        <h2 style={styles.panelTitle}>
+          {editCategoryId ? 'Editar categoria' : 'Categorias'}
+        </h2>
+
+        <div style={styles.categoryForm}>
+          <input
+            style={{ ...styles.input, flex: 1 }}
+            placeholder="Nome da categoria"
+            value={nomeCategoria}
+            onChange={(e) => setNomeCategoria(e.target.value)}
+          />
+          <button
+            onClick={editCategoryId ? handleUpdateCategory : handleCreateCategory}
+            style={styles.primaryButton}
+          >
+            {editCategoryId ? 'Salvar' : 'Criar categoria'}
+          </button>
+          {editCategoryId && (
+            <button onClick={() => { setEditCategoryId(null); setNomeCategoria('') }} style={styles.secondaryButton}>
+              Cancelar
+            </button>
+          )}
+        </div>
+
+        <div style={styles.productList}>
+          {categories.map((cat) => (
+            <div key={cat.id} style={styles.productItem}>
+              <strong style={styles.productName}>{cat.nome}</strong>
+              <div style={styles.productRight}>
+                <button style={styles.editButton} onClick={() => { setEditCategoryId(cat.id); setNomeCategoria(cat.nome) }}>
+                  Editar
+                </button>
+                <button style={styles.deleteButton} onClick={() => handleDeleteCategory(cat.id)}>
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
   )
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    display: 'flex',
-    background: '#f3f4f6',
-    fontFamily: 'Arial, sans-serif',
-  },
-  sidebar: {
-    width: 260,
-    background: '#111827',
-    color: '#fff',
-    padding: 24,
-  },
-  logo: {
-    margin: 0,
-    fontSize: 22,
-  },
-  nav: {
-    marginTop: 32,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  navItem: {
-    padding: '12px 14px',
-    borderRadius: 12,
-    background: 'rgba(255,255,255,0.08)',
-    cursor: 'pointer',
-    color: '#fff',
-    textDecoration: 'none',
-  },
-  content: {
-    flex: 1,
-    padding: 32,
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 20,
-  },
-  title: {
-    margin: 0,
-    fontSize: 32,
-    color: '#111827',
-  },
-  subtitle: {
-    margin: '8px 0 0',
-    color: '#6b7280',
-  },
   cards: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
     gap: 16,
-    marginTop: 28,
+    marginBottom: 24,
   },
   card: {
     background: '#fff',
     borderRadius: 18,
     padding: 20,
-    boxShadow: '0 8px 20px rgba(0,0,0,0.06)',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
   },
   cardLabel: {
     display: 'block',
     color: '#6b7280',
-    fontSize: 14,
+    fontSize: 13,
   },
   cardValue: {
     display: 'block',
     marginTop: 8,
-    fontSize: 28,
+    fontSize: 26,
     color: '#111827',
   },
-  formPanel: {
-    marginTop: 28,
-    background: '#fff',
-    borderRadius: 20,
-    padding: 22,
-    boxShadow: '0 8px 20px rgba(0,0,0,0.06)',
-  },
   panel: {
-    marginTop: 28,
     background: '#fff',
     borderRadius: 20,
     padding: 22,
-    boxShadow: '0 8px 20px rgba(0,0,0,0.06)',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
+    marginBottom: 24,
   },
   panelTitle: {
-    margin: 0,
-    fontSize: 22,
+    margin: '0 0 18px',
+    fontSize: 20,
     color: '#111827',
   },
   formGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 14,
-    marginTop: 18,
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: 12,
+  },
+  input: {
+    width: '100%',
+    padding: '11px 14px',
+    borderRadius: 12,
+    border: '1px solid #d1d5db',
+    fontSize: 14,
+    outline: 'none',
+    boxSizing: 'border-box',
   },
   uploadBox: {
-    marginTop: 18,
+    marginTop: 16,
     background: '#f9fafb',
     border: '1px dashed #cbd5e1',
     borderRadius: 16,
     padding: 16,
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 20,
   },
   uploadText: {
-    margin: '6px 0 12px',
+    margin: '6px 0',
     color: '#6b7280',
-    fontSize: 14,
+    fontSize: 13,
   },
   preview: {
-    width: 120,
-    height: 90,
-    borderRadius: 14,
+    width: 110,
+    height: 85,
+    borderRadius: 12,
     objectFit: 'cover',
+    flexShrink: 0,
   },
   previewFallback: {
-    width: 120,
-    height: 90,
-    borderRadius: 14,
+    width: 110,
+    height: 85,
+    borderRadius: 12,
     background: '#e5e7eb',
-    color: '#6b7280',
+    color: '#9ca3af',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontWeight: 'bold',
+    fontSize: 13,
+    flexShrink: 0,
   },
-  categoryForm: {
+  checkboxLabel: {
     display: 'flex',
-    gap: 12,
-    marginTop: 18,
     alignItems: 'center',
-  },
-  input: {
-    width: '100%',
-    padding: '12px 14px',
-    borderRadius: 12,
-    border: '1px solid #d1d5db',
-    fontSize: 15,
-    outline: 'none',
+    marginTop: 16,
+    fontSize: 14,
+    color: '#374151',
+    cursor: 'pointer',
   },
   actions: {
     display: 'flex',
     gap: 12,
-    marginTop: 18,
+    marginTop: 16,
   },
   primaryButton: {
     border: 0,
     background: '#16a34a',
     color: '#fff',
-    padding: '12px 18px',
+    padding: '11px 20px',
     borderRadius: 999,
     fontWeight: 'bold',
     cursor: 'pointer',
+    fontSize: 14,
     whiteSpace: 'nowrap',
   },
   secondaryButton: {
     border: '1px solid #d1d5db',
     background: '#fff',
-    color: '#111827',
-    padding: '12px 18px',
+    color: '#374151',
+    padding: '11px 20px',
     borderRadius: 999,
     fontWeight: 'bold',
     cursor: 'pointer',
+    fontSize: 14,
     whiteSpace: 'nowrap',
   },
   empty: {
-    marginTop: 20,
-    padding: 24,
-    borderRadius: 14,
-    background: '#f9fafb',
-    color: '#6b7280',
+    color: '#9ca3af',
     textAlign: 'center',
-  },
-  productList: {
-    marginTop: 18,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  productItem: {
-    background: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    borderRadius: 16,
-    padding: 16,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  productInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    objectFit: 'cover',
-  },
-  thumbFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    background: '#dcfce7',
-    color: '#166534',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 'bold',
-    fontSize: 22,
-  },
-  productName: {
-    fontSize: 17,
-    color: '#111827',
-  },
-  productMeta: {
-    margin: '6px 0 0',
-    color: '#6b7280',
+    padding: '20px 0',
     fontSize: 14,
-  },
-  productRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  },
-  price: {
-    color: '#111827',
-    fontSize: 16,
-    marginRight: 8,
-  },
-  editButton: {
-    border: 0,
-    background: '#2563eb',
-    color: '#fff',
-    padding: '9px 12px',
-    borderRadius: 999,
-    cursor: 'pointer',
-    fontWeight: 'bold',
-  },
-  deleteButton: {
-    border: 0,
-    background: '#ef4444',
-    color: '#fff',
-    padding: '9px 12px',
-    borderRadius: 999,
-    cursor: 'pointer',
-    fontWeight: 'bold',
   },
   pagination: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 16,
-    marginTop: 18,
+    margin: '12px 0',
   },
   pageButton: {
     border: '1px solid #d1d5db',
     background: '#fff',
     color: '#111827',
-    padding: '8px 16px',
+    padding: '7px 14px',
     borderRadius: 999,
     cursor: 'pointer',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 13,
   },
   pageInfo: {
     color: '#6b7280',
-    fontSize: 14,
+    fontSize: 13,
+  },
+  productList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  productItem: {
+    background: '#f9fafb',
+    border: '1px solid #e5e7eb',
+    borderRadius: 14,
+    padding: '12px 14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  productInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  thumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    objectFit: 'cover',
+    flexShrink: 0,
+  },
+  thumbFallback: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    background: '#dcfce7',
+    color: '#166534',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
+    fontSize: 20,
+    flexShrink: 0,
+  },
+  productName: {
+    fontSize: 15,
+    color: '#111827',
+    display: 'block',
+  },
+  productMeta: {
+    margin: '3px 0 0',
+    color: '#6b7280',
+    fontSize: 13,
+  },
+  productRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  price: {
+    color: '#111827',
+    fontSize: 15,
+    marginRight: 4,
+  },
+  toggleButton: {
+    border: 0,
+    padding: '7px 11px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  editButton: {
+    border: 0,
+    background: '#2563eb',
+    color: '#fff',
+    padding: '7px 11px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  deleteButton: {
+    border: 0,
+    background: '#ef4444',
+    color: '#fff',
+    padding: '7px 11px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  categoryForm: {
+    display: 'flex',
+    gap: 10,
+    alignItems: 'center',
+    marginBottom: 16,
   },
 }
