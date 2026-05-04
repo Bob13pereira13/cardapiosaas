@@ -4,49 +4,46 @@ import { useState } from 'react'
 import { API_URL } from '@/lib/config'
 import { getToken } from '@/lib/auth'
 
-export default function LoginPage() {
+export default function CadastroPage() {
+  const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Redireciona se já está autenticado
   if (typeof window !== 'undefined' && getToken()) {
     window.location.href = '/dashboard'
   }
 
-  async function handleLogin() {
-    if (!email || !password) {
-      return alert('Preencha email e senha.')
+  async function handleCadastro() {
+    if (!nome || !email || !password) {
+      return alert('Preencha todos os campos.')
+    }
+
+    if (password.length < 6) {
+      return alert('Senha deve ter no mínimo 6 caracteres.')
     }
 
     try {
       setLoading(true)
 
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetch(`${API_URL}/users`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, email, password }),
       })
-
-      if (!res.ok) {
-        throw new Error('Login inválido')
-      }
 
       const data = await res.json()
 
-      // 🔥 SALVA TOKEN
-      localStorage.setItem('token', data.access_token)
+      if (!res.ok) {
+        const msg = data?.message
+        if (Array.isArray(msg)) throw new Error(msg.join('\n'))
+        throw new Error(msg || 'Erro ao criar conta.')
+      }
 
-      // 🚀 REDIRECIONA
-      window.location.href = '/dashboard'
-    } catch (error) {
-      console.error(error)
-      alert('Email ou senha inválidos.')
+      alert('Conta criada com sucesso! Faça login para continuar.')
+      window.location.href = '/login'
+    } catch (error: any) {
+      alert(error.message || 'Erro ao criar conta.')
     } finally {
       setLoading(false)
     }
@@ -55,11 +52,19 @@ export default function LoginPage() {
   return (
     <main style={styles.page}>
       <section style={styles.card}>
-        <h1 style={styles.title}>Entrar</h1>
-        <p style={styles.subtitle}>Acesse seu painel do restaurante</p>
+        <h1 style={styles.title}>Criar conta</h1>
+        <p style={styles.subtitle}>Crie seu cardápio digital em minutos</p>
 
         <input
           style={styles.input}
+          placeholder="Nome do restaurante"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+        />
+
+        <input
+          style={styles.input}
+          type="email"
           placeholder="Seu email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -68,23 +73,19 @@ export default function LoginPage() {
         <input
           style={styles.input}
           type="password"
-          placeholder="Sua senha"
+          placeholder="Senha (mínimo 6 caracteres)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button onClick={handleLogin} style={styles.button}>
-          {loading ? 'Entrando...' : 'Entrar'}
+        <button onClick={handleCadastro} style={styles.button}>
+          {loading ? 'Criando conta...' : 'Criar conta grátis'}
         </button>
 
-        <a href="/forgot-password" style={styles.forgotLink}>
-          Esqueci minha senha
-        </a>
-
-        <p style={styles.registerRow}>
-          Não tem conta?{' '}
-          <a href="/cadastro" style={styles.registerLink}>
-            Criar conta grátis
+        <p style={styles.loginRow}>
+          Já tem conta?{' '}
+          <a href="/login" style={styles.loginLink}>
+            Entrar
           </a>
         </p>
       </section>
@@ -127,6 +128,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     marginBottom: 12,
     outline: 'none',
+    boxSizing: 'border-box',
   },
   button: {
     width: '100%',
@@ -136,24 +138,17 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '14px',
     borderRadius: 999,
     fontWeight: 'bold',
+    fontSize: 15,
     cursor: 'pointer',
     marginTop: 8,
   },
-  forgotLink: {
-    display: 'block',
-    textAlign: 'center',
-    marginTop: 16,
-    color: '#6b7280',
-    fontSize: 14,
-    textDecoration: 'none',
-  },
-  registerRow: {
+  loginRow: {
     textAlign: 'center',
     marginTop: 20,
     fontSize: 14,
     color: '#6b7280',
   },
-  registerLink: {
+  loginLink: {
     color: '#16a34a',
     fontWeight: 'bold',
     textDecoration: 'none',
