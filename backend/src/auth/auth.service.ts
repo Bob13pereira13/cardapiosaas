@@ -1,7 +1,12 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { UserRole } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 
@@ -20,13 +25,24 @@ export class AuthService {
       throw new UnauthorizedException('Email ou senha inválidos');
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Conta inativa.');
+    }
+
+    if (
+      user.role === UserRole.RESTAURANT &&
+      user.subscriptionStatus === 'CANCELED'
+    ) {
+      throw new UnauthorizedException('Assinatura indisponivel.');
+    }
+
     const passwordValid = await bcrypt.compare(data.password, user.password);
 
     if (!passwordValid) {
       throw new UnauthorizedException('Email ou senha inválidos');
     }
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
 
     return {
       access_token: await this.jwtService.signAsync(payload),
@@ -36,6 +52,10 @@ export class AuthService {
         email: user.email,
         whatsapp: user.whatsapp,
         slug: user.slug,
+        role: user.role,
+        isActive: user.isActive,
+        plan: user.plan,
+        subscriptionStatus: user.subscriptionStatus,
       },
     };
   }
@@ -45,7 +65,10 @@ export class AuthService {
 
     // Sempre retorna sucesso para não revelar se o e-mail existe
     if (!user) {
-      return { message: 'Se este e-mail estiver cadastrado, você receberá as instruções.' };
+      return {
+        message:
+          'Se este e-mail estiver cadastrado, você receberá as instruções.',
+      };
     }
 
     const token = crypto.randomBytes(32).toString('hex');
@@ -58,7 +81,10 @@ export class AuthService {
 
     await this.mailService.sendPasswordReset(user.email, resetUrl);
 
-    return { message: 'Se este e-mail estiver cadastrado, você receberá as instruções.' };
+    return {
+      message:
+        'Se este e-mail estiver cadastrado, você receberá as instruções.',
+    };
   }
 
   async resetPassword(token: string, newPassword: string) {

@@ -18,10 +18,9 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: './uploads',
+        destination: process.env.UPLOADS_DIR || './uploads',
         filename: (req, file, callback) => {
-          const uniqueName =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
           callback(null, `${uniqueName}${ext}`);
         },
@@ -39,7 +38,7 @@ export class UploadController {
     }),
   )
   uploadFile(@UploadedFile() file: Express.Multer.File) {
-    const apiUrl = process.env.API_URL || 'http://localhost:3000';
+    const apiUrl = process.env.API_URL || 'https://api.cardapiopedeai.com.br';
     return {
       url: `${apiUrl}/uploads/${file.filename}`,
     };

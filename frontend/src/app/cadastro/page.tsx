@@ -1,18 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { API_URL } from '@/lib/config'
 import { getToken } from '@/lib/auth'
 
 export default function CadastroPage() {
+  const router = useRouter()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
-  if (typeof window !== 'undefined' && getToken()) {
-    window.location.href = '/dashboard'
-  }
+  useEffect(() => {
+    if (getToken()) router.replace('/dashboard')
+  }, [router])
 
   async function handleCadastro() {
     if (!nome || !email || !password) {
@@ -41,9 +44,9 @@ export default function CadastroPage() {
       }
 
       alert('Conta criada com sucesso! Faça login para continuar.')
-      window.location.href = '/login'
-    } catch (error: any) {
-      alert(error.message || 'Erro ao criar conta.')
+      router.replace('/login')
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : 'Erro ao criar conta.')
     } finally {
       setLoading(false)
     }
@@ -84,9 +87,9 @@ export default function CadastroPage() {
 
         <p style={styles.loginRow}>
           Já tem conta?{' '}
-          <a href="/login" style={styles.loginLink}>
+          <Link href="/login" style={styles.loginLink}>
             Entrar
-          </a>
+          </Link>
         </p>
       </section>
     </main>

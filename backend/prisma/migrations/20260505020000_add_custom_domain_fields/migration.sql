@@ -1,0 +1,5 @@
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "customDomain" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "customDomainVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "customDomainStatus" TEXT DEFAULT 'PENDING';
+
+CREATE UNIQUE INDEX IF NOT EXISTS "User_customDomain_key" ON "User"("customDomain");

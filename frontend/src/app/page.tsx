@@ -1,11 +1,13 @@
+import Link from 'next/link'
+
 export default function HomePage() {
   return (
     <main style={styles.page}>
       <nav style={styles.nav}>
         <span style={styles.brand}>Cardápio SaaS</span>
         <div style={styles.navLinks}>
-          <a href="/login" style={styles.navLink}>Entrar</a>
-          <a href="/cadastro" style={styles.navCta}>Criar conta grátis</a>
+          <Link href="/login" style={styles.navLink}>Entrar</Link>
+          <Link href="/cadastro" style={styles.navCta}>Criar conta grátis</Link>
         </div>
       </nav>
 
@@ -17,8 +19,8 @@ export default function HomePage() {
           Crie seu cardápio online em minutos, compartilhe o link e receba pedidos pelo WhatsApp. Sem taxa por pedido.
         </p>
         <div style={styles.heroCtas}>
-          <a href="/cadastro" style={styles.ctaPrimary}>Criar meu cardápio grátis</a>
-          <a href="/cardapio/demo" style={styles.ctaSecondary}>Ver exemplo →</a>
+          <Link href="/cadastro" style={styles.ctaPrimary}>Criar meu cardápio grátis</Link>
+          <Link href="/cardapio/demo" style={styles.ctaSecondary}>Ver exemplo →</Link>
         </div>
       </section>
 
@@ -51,7 +53,7 @@ export default function HomePage() {
       <section style={styles.cta}>
         <h2 style={styles.ctaTitle}>Pronto para começar?</h2>
         <p style={styles.ctaText}>Crie sua conta e tenha seu cardápio no ar em menos de 5 minutos.</p>
-        <a href="/cadastro" style={styles.ctaPrimary}>Criar conta grátis</a>
+        <Link href="/cadastro" style={styles.ctaPrimary}>Criar conta grátis</Link>
       </section>
 
       <footer style={styles.footer}>

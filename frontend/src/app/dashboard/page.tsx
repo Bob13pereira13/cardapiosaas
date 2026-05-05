@@ -1,6 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import Image from 'next/image'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { io, Socket } from 'socket.io-client'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
 
@@ -19,9 +30,135 @@ type Product = {
   category?: Category
 }
 
+type OrderStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'IN_PREPARATION'
+  | 'READY'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
+  | 'CANCELED'
+
+type DeliveryType = 'DELIVERY' | 'PICKUP' | 'DINE_IN'
+type PaymentMethod =
+  | 'PIX'
+  | 'CREDIT_CARD'
+  | 'DEBIT_CARD'
+  | 'CASH'
+  | 'ONLINE_PIX'
+  | 'ONLINE_CARD'
+type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+type SubscriptionStatus = 'TRIAL' | 'ACTIVE' | 'OVERDUE' | 'CANCELED'
+type Account = {
+  id: number
+  plan: string
+  subscriptionStatus: SubscriptionStatus
+  trialEndsAt?: string | null
+}
+
+type CustomerAddress = {
+  street?: string
+  number?: string
+  complement?: string
+  neighborhood?: string
+  city?: string
+  zipcode?: string
+}
+
+type OrderItem = {
+  id?: number
+  productNameSnapshot: string
+  quantity: number
+  unitPrice?: number
+  itemTotal: number
+  itemNotes?: string
+}
+
+type Order = {
+  id: number
+  orderNumber: number
+  customerName: string
+  customerPhone?: string
+  customerAddress?: CustomerAddress | null
+  deliveryType?: DeliveryType
+  orderStatus: OrderStatus
+  paymentMethod?: PaymentMethod
+  paymentStatus?: PaymentStatus
+  subtotal?: number
+  deliveryFee?: number
+  discountAmount?: number
+  total: number
+  notes?: string
+  createdAt: string
+  items: OrderItem[]
+}
+
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  PENDING: 'Pendente',
+  CONFIRMED: 'Confirmado',
+  IN_PREPARATION: 'Em preparo',
+  READY: 'Pronto',
+  OUT_FOR_DELIVERY: 'Em entrega',
+  DELIVERED: 'Entregue',
+  CANCELED: 'Cancelado',
+}
+
+const STATUS_BADGE: Record<OrderStatus, { background: string; color: string }> = {
+  PENDING: { background: '#fef3c7', color: '#92400e' },
+  CONFIRMED: { background: '#dbeafe', color: '#1d4ed8' },
+  IN_PREPARATION: { background: '#dbeafe', color: '#1d4ed8' },
+  READY: { background: '#dcfce7', color: '#166534' },
+  OUT_FOR_DELIVERY: { background: '#cffafe', color: '#0e7490' },
+  DELIVERED: { background: '#dcfce7', color: '#166534' },
+  CANCELED: { background: '#fee2e2', color: '#b91c1c' },
+}
+
+const PAYMENT_LABEL: Record<PaymentMethod, string> = {
+  PIX: 'PIX',
+  CREDIT_CARD: 'Cartao de credito',
+  DEBIT_CARD: 'Cartao de debito',
+  CASH: 'Dinheiro',
+  ONLINE_PIX: 'PIX online',
+  ONLINE_CARD: 'Cartao online',
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  })
+}
+
+function isToday(date: string) {
+  const current = new Date(date)
+  const today = new Date()
+  return current.toDateString() === today.toDateString()
+}
+
+function formatAddress(address?: CustomerAddress | null) {
+  if (!address) return 'Nao informado'
+
+  const line = [
+    address.street,
+    address.number,
+    address.complement,
+    address.neighborhood,
+    address.city,
+  ].filter(Boolean)
+
+  return line.length > 0 ? line.join(', ') : 'Nao informado'
+}
+
 export default function DashboardPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [connected, setConnected] = useState(false)
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] =
+    useState<SubscriptionStatus | null>(null)
+  const [account, setAccount] = useState<Account | null>(null)
+  const socketRef = useRef<Socket | null>(null)
 
   const [nome, setNome] = useState('')
   const [descricao, setDescricao] = useState('')
@@ -41,7 +178,7 @@ export default function DashboardPage() {
   const [totalProducts, setTotalProducts] = useState(0)
   const LIMIT = 20
 
-  async function loadProducts(p = page) {
+  const loadProducts = useCallback(async (p: number) => {
     const token = getToken()
     if (!token) { window.location.href = '/login'; return }
 
@@ -56,9 +193,9 @@ export default function DashboardPage() {
     setTotalPages(result.totalPages)
     setTotalProducts(result.total)
     setPage(p)
-  }
+  }, [])
 
-  async function loadCategories() {
+  const loadCategories = useCallback(async () => {
     const token = getToken()
     if (!token) return
 
@@ -70,17 +207,102 @@ export default function DashboardPage() {
 
     const data = await res.json()
     setCategories(data)
-  }
+  }, [])
+
+  const loadOrders = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+
+    const res = await fetch(`${API_URL}/orders?limit=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (handleUnauthorized(res)) return
+
+    const data = await res.json()
+    setOrders(data)
+  }, [])
+
+  const loadAccount = useCallback(async () => {
+    const token = getToken()
+    if (!token) return null
+
+    const res = await fetch(`${API_URL}/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (handleUnauthorized(res)) return null
+
+    const data = await res.json()
+    setAccount(data)
+    setSubscriptionStatus(data.subscriptionStatus)
+    return data.subscriptionStatus as SubscriptionStatus
+  }, [])
 
   useEffect(() => {
     async function init() {
       setLoading(true)
-      await loadProducts()
+      const status = await loadAccount()
+      if (status === 'OVERDUE' || status === 'CANCELED') {
+        setLoading(false)
+        return
+      }
+      await loadProducts(1)
       await loadCategories()
+      await loadOrders()
       setLoading(false)
     }
     init()
-  }, [])
+  }, [loadAccount, loadCategories, loadOrders, loadProducts])
+
+  useEffect(() => {
+    const token = getToken()
+    if (
+      !token ||
+      subscriptionStatus === 'OVERDUE' ||
+      subscriptionStatus === 'CANCELED'
+    ) return
+
+    const socket = io(API_URL, { auth: { token } })
+    socketRef.current = socket
+
+    socket.on('connect', () => setConnected(true))
+    socket.on('disconnect', () => setConnected(false))
+
+    socket.on('order:new', (order: Order) => {
+      setOrders((prev) => {
+        const exists = prev.some((current) => current.id === order.id)
+        if (exists) {
+          return prev.map((current) => (current.id === order.id ? order : current))
+        }
+        return [order, ...prev].slice(0, 50)
+      })
+    })
+
+    socket.on(
+      'order:status-changed',
+      ({ orderId, status }: { orderId: number; status: OrderStatus }) => {
+        setOrders((prev) =>
+          prev.map((order) =>
+            order.id === orderId ? { ...order, orderStatus: status } : order,
+          ),
+        )
+      },
+    )
+
+    socket.on('order:payment-confirmed', ({ orderId }: { orderId: number }) => {
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId ? { ...order, paymentStatus: 'PAID' } : order,
+        ),
+      )
+    })
+
+    return () => {
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [subscriptionStatus])
 
   async function handleUploadImagem(file: File) {
     try {
@@ -124,7 +346,7 @@ export default function DashboardPage() {
     })
 
     cancelarEdicao()
-    await loadProducts()
+    await loadProducts(page)
   }
 
   async function handleUpdate() {
@@ -145,7 +367,7 @@ export default function DashboardPage() {
     })
 
     cancelarEdicao()
-    await loadProducts()
+    await loadProducts(page)
   }
 
   async function toggleDisponivel(product: Product) {
@@ -171,7 +393,7 @@ export default function DashboardPage() {
       headers: { Authorization: `Bearer ${token}` },
     })
 
-    await loadProducts()
+    await loadProducts(page)
   }
 
   async function handleCreateCategory() {
@@ -203,7 +425,7 @@ export default function DashboardPage() {
     setEditCategoryId(null)
     setNomeCategoria('')
     await loadCategories()
-    await loadProducts()
+    await loadProducts(page)
   }
 
   async function handleDeleteCategory(id: number) {
@@ -217,7 +439,7 @@ export default function DashboardPage() {
     })
 
     await loadCategories()
-    await loadProducts()
+    await loadProducts(page)
   }
 
   function cancelarEdicao() {
@@ -230,22 +452,413 @@ export default function DashboardPage() {
     setCategoryId('')
   }
 
+  const todayOrders = orders.filter((order) => isToday(order.createdAt))
+  const todayRevenue = todayOrders.reduce((sum, order) => sum + order.total, 0)
+  const averageTicket =
+    todayOrders.length > 0 ? todayRevenue / todayOrders.length : 0
+  const pendingOrders = orders.filter(
+    (order) =>
+      order.orderStatus === 'PENDING' || order.orderStatus === 'CONFIRMED',
+  ).length
+  const chartData = Array.from({ length: 7 }).map((_, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() - (6 - index))
+    const dayOrders = orders.filter(
+      (order) =>
+        new Date(order.createdAt).toDateString() === date.toDateString(),
+    )
+
+    return {
+      day: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
+      revenue: dayOrders.reduce((sum, order) => sum + order.total, 0),
+    }
+  })
+  const recentOrders = orders.slice(0, 5)
+  const selectedOrder = selectedOrderId
+    ? orders.find((order) => order.id === selectedOrderId) ?? null
+    : null
+  const popularProducts = Object.values(
+    orders.reduce<Record<string, { name: string; quantity: number; total: number }>>(
+      (acc, order) => {
+        for (const item of order.items) {
+          const current = acc[item.productNameSnapshot] ?? {
+            name: item.productNameSnapshot,
+            quantity: 0,
+            total: 0,
+          }
+          current.quantity += item.quantity
+          current.total += item.itemTotal
+          acc[item.productNameSnapshot] = current
+        }
+        return acc
+      },
+      {},
+    ),
+  )
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 4)
+  const billingBlocked =
+    subscriptionStatus === 'OVERDUE' || subscriptionStatus === 'CANCELED'
+  const trialDaysLeft =
+    account?.subscriptionStatus === 'TRIAL' && account.trialEndsAt
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(account.trialEndsAt).getTime() - Date.now()) /
+              (1000 * 60 * 60 * 24),
+          ),
+        )
+      : null
+
   return (
-    <div>
+    <div style={styles.page}>
+      <section style={styles.hero}>
+        <div>
+          <span style={styles.eyebrow}>Visao geral</span>
+          <h1 style={styles.heroTitle}>Dashboard do restaurante</h1>
+          <p style={styles.heroText}>
+            Acompanhe vendas, pedidos e {totalProducts} produtos sem sair do painel.
+          </p>
+        </div>
+        <div style={styles.heroActions}>
+          <span style={styles.realtimeBadge}>
+            <span
+              style={{
+                ...styles.realtimeDot,
+                background: connected ? '#16a34a' : '#ef4444',
+              }}
+            />
+            {connected ? 'Tempo real ativo' : 'Tempo real offline'}
+          </span>
+          <a href="/dashboard/pedidos" style={styles.heroButton}>
+            Ver pedidos
+          </a>
+        </div>
+      </section>
+
+      {billingBlocked && (
+        <section style={styles.billingAlert}>
+          <strong>Sua assinatura está vencida</strong>
+          <p>Regularize para continuar usando.</p>
+          <a href="/dashboard/assinatura" style={styles.billingButton}>
+            Regularizar pagamento
+          </a>
+        </section>
+      )}
+
+      {!billingBlocked && account && (
+        <section style={styles.subscriptionNotice}>
+          <div>
+            <strong>Status da assinatura: {account.subscriptionStatus}</strong>
+            {trialDaysLeft !== null && (
+              <p>
+                Seu trial termina em {trialDaysLeft} dia
+                {trialDaysLeft === 1 ? '' : 's'}.
+              </p>
+            )}
+          </div>
+          <a href="/dashboard/assinatura" style={styles.billingButton}>
+            Regularizar pagamento
+          </a>
+        </section>
+      )}
+
+      {!billingBlocked && (
+        <>
+
       <div style={styles.cards}>
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>Total de produtos</span>
-          <strong style={styles.cardValue}>{totalProducts}</strong>
+        <div style={styles.metricCard}>
+          <span style={styles.metricIcon}>R$</span>
+          <span style={styles.cardLabel}>Faturamento do dia</span>
+          {loading ? (
+            <span style={styles.skeletonValue} />
+          ) : (
+            <strong style={styles.cardValue}>{formatCurrency(todayRevenue)}</strong>
+          )}
         </div>
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>Categorias</span>
-          <strong style={styles.cardValue}>{categories.length}</strong>
+        <div style={styles.metricCard}>
+          <span style={styles.metricIcon}>#</span>
+          <span style={styles.cardLabel}>Pedidos do dia</span>
+          {loading ? (
+            <span style={styles.skeletonValue} />
+          ) : (
+            <strong style={styles.cardValue}>{todayOrders.length}</strong>
+          )}
         </div>
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>Status</span>
-          <strong style={{ ...styles.cardValue, color: '#16a34a', fontSize: 18 }}>Online</strong>
+        <div style={styles.metricCard}>
+          <span style={styles.metricIcon}>%</span>
+          <span style={styles.cardLabel}>Ticket medio</span>
+          {loading ? (
+            <span style={styles.skeletonValue} />
+          ) : (
+            <strong style={styles.cardValue}>{formatCurrency(averageTicket)}</strong>
+          )}
+        </div>
+        <div style={styles.metricCard}>
+          <span style={styles.metricIcon}>!</span>
+          <span style={styles.cardLabel}>Pedidos pendentes</span>
+          {loading ? (
+            <span style={styles.skeletonValue} />
+          ) : (
+            <strong style={styles.cardValue}>{pendingOrders}</strong>
+          )}
         </div>
       </div>
+
+      <section style={styles.insightsGrid}>
+        <div style={styles.chartPanel}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.panelTitle}>Faturamento</h2>
+              <p style={styles.panelSubtitle}>Ultimos 7 dias</p>
+            </div>
+            <span style={styles.softBadge}>Receita</span>
+          </div>
+          <div style={styles.chartBox}>
+            {loading ? (
+              <div style={styles.chartSkeleton} />
+            ) : orders.length === 0 ? (
+              <div style={styles.emptyState}>
+                <strong>Nenhum faturamento ainda</strong>
+                <span>Quando os primeiros pedidos chegarem, o grafico aparece aqui.</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={chartData}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="revenueGradient"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#16a34a" stopOpacity={0.24} />
+                      <stop offset="95%" stopColor="#16a34a" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="#e5e7eb"
+                    strokeDasharray="4 4"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="day"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#6b7280', fontSize: 12 }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#6b7280', fontSize: 12 }}
+                    width={42}
+                  />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#16a34a"
+                    strokeWidth={3}
+                    fill="url(#revenueGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div style={styles.sidePanel}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.panelTitle}>Pedidos recentes</h2>
+              <p style={styles.panelSubtitle}>Ultimas movimentacoes</p>
+            </div>
+          </div>
+          <div style={styles.recentList}>
+            {loading ? (
+              <>
+                <div style={styles.orderSkeleton} />
+                <div style={styles.orderSkeleton} />
+                <div style={styles.orderSkeleton} />
+              </>
+            ) : recentOrders.length === 0 ? (
+              <div style={styles.emptyState}>
+                <strong>Nenhum pedido recente</strong>
+                <span>Novos pedidos entram aqui automaticamente em tempo real.</span>
+              </div>
+            ) : (
+              recentOrders.map((order) => (
+                <div key={order.id} style={styles.recentItem}>
+                  <div>
+                    <strong style={styles.recentTitle}>{order.customerName}</strong>
+                    <p style={styles.recentMeta}>
+                      {order.items.length} item{order.items.length !== 1 ? 's' : ''} - {formatCurrency(order.total)}
+                    </p>
+                    <span
+                      style={{
+                        ...styles.statusPill,
+                        ...STATUS_BADGE[order.orderStatus],
+                      }}
+                    >
+                      {STATUS_LABEL[order.orderStatus]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderId(order.id)}
+                    style={styles.smallButton}
+                  >
+                    Ver
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section style={styles.popularPanel}>
+        <div style={styles.sectionHeader}>
+          <div>
+            <h2 style={styles.panelTitle}>Produtos populares</h2>
+            <p style={styles.panelSubtitle}>Mais vendidos nos pedidos carregados</p>
+          </div>
+        </div>
+        <div style={styles.popularGrid}>
+          {loading ? (
+            <>
+              <div style={styles.productSkeleton} />
+              <div style={styles.productSkeleton} />
+              <div style={styles.productSkeleton} />
+              <div style={styles.productSkeleton} />
+            </>
+          ) : popularProducts.length === 0 ? (
+            <div style={styles.emptyState}>
+              <strong>Sem produtos populares ainda</strong>
+              <span>Assim que houver vendas, os campeoes aparecem nesta area.</span>
+            </div>
+          ) : (
+            popularProducts.map((item) => {
+              const product = products.find((p) => p.nome === item.name)
+              return (
+                <div key={item.name} style={styles.popularCard}>
+                  {product?.imagem ? (
+                    <Image
+                      src={product.imagem}
+                      width={48}
+                      height={48}
+                      style={styles.popularImage}
+                      alt={item.name}
+                      unoptimized
+                    />
+                  ) : (
+                    <div style={styles.popularFallback}>
+                      {item.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <strong style={styles.popularName}>{item.name}</strong>
+                    <p style={styles.popularMeta}>
+                      {item.quantity} vendido{item.quantity !== 1 ? 's' : ''} - {formatCurrency(product?.preco ?? item.total / item.quantity)}
+                    </p>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </section>
+
+      {selectedOrder && (
+        <div style={styles.modalOverlay} onClick={() => setSelectedOrderId(null)}>
+          <div style={styles.modal} onClick={(event) => event.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <div>
+                <span style={styles.eyebrow}>Pedido #{selectedOrder.orderNumber}</span>
+                <h2 style={styles.modalTitle}>{selectedOrder.customerName}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrderId(null)}
+                style={styles.closeButton}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div style={styles.modalGrid}>
+              <div style={styles.detailBox}>
+                <span style={styles.detailLabel}>Status</span>
+                <span
+                  style={{
+                    ...styles.statusPill,
+                    ...STATUS_BADGE[selectedOrder.orderStatus],
+                  }}
+                >
+                  {STATUS_LABEL[selectedOrder.orderStatus]}
+                </span>
+              </div>
+              <div style={styles.detailBox}>
+                <span style={styles.detailLabel}>Telefone</span>
+                <strong style={styles.detailValue}>
+                  {selectedOrder.customerPhone || 'Nao informado'}
+                </strong>
+              </div>
+              <div style={styles.detailBox}>
+                <span style={styles.detailLabel}>Pagamento</span>
+                <strong style={styles.detailValue}>
+                  {selectedOrder.paymentMethod
+                    ? PAYMENT_LABEL[selectedOrder.paymentMethod]
+                    : 'Nao informado'}
+                </strong>
+              </div>
+              <div style={styles.detailBox}>
+                <span style={styles.detailLabel}>Total</span>
+                <strong style={styles.detailValue}>
+                  {formatCurrency(selectedOrder.total)}
+                </strong>
+              </div>
+            </div>
+
+            <div style={styles.modalSection}>
+              <h3 style={styles.modalSectionTitle}>Itens</h3>
+              <div style={styles.modalItems}>
+                {selectedOrder.items.map((item, index) => (
+                  <div key={item.id ?? `${item.productNameSnapshot}-${index}`} style={styles.modalItem}>
+                    <div>
+                      <strong style={styles.modalItemName}>
+                        {item.quantity}x {item.productNameSnapshot}
+                      </strong>
+                      {item.itemNotes && (
+                        <p style={styles.modalItemNotes}>{item.itemNotes}</p>
+                      )}
+                    </div>
+                    <span style={styles.modalItemPrice}>
+                      {formatCurrency(item.itemTotal)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={styles.modalSection}>
+              <h3 style={styles.modalSectionTitle}>Entrega</h3>
+              <p style={styles.modalText}>{formatAddress(selectedOrder.customerAddress)}</p>
+            </div>
+
+            <div style={styles.modalSection}>
+              <h3 style={styles.modalSectionTitle}>Observacoes</h3>
+              <p style={styles.modalText}>
+                {selectedOrder.notes || 'Nenhuma observacao informada.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Formulário de produto */}
       <section style={styles.panel}>
@@ -311,7 +924,7 @@ export default function DashboardPage() {
           </div>
 
           {imagem
-            ? <img src={imagem} style={styles.preview} alt="preview" />
+            ? <Image src={imagem} width={120} height={120} style={styles.preview} alt="preview" unoptimized />
             : <div style={styles.previewFallback}>Preview</div>
           }
         </div>
@@ -375,7 +988,7 @@ export default function DashboardPage() {
             >
               <div style={styles.productInfo}>
                 {product.imagem
-                  ? <img src={product.imagem} style={styles.thumb} alt={product.nome} />
+                  ? <Image src={product.imagem} width={64} height={64} style={styles.thumb} alt={product.nome} unoptimized />
                   : <div style={styles.thumbFallback}>{product.nome.charAt(0).toUpperCase()}</div>
                 }
                 <div>
@@ -473,33 +1086,446 @@ export default function DashboardPage() {
           ))}
         </div>
       </section>
+
+        </>
+      )}
     </div>
   )
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  page: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 28,
+    maxWidth: 1180,
+    margin: '0 auto',
+    padding: '24px 16px 40px',
+    background: '#f6f7fb',
+  },
+  hero: {
+    background: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    boxShadow: '0 14px 40px rgba(15,23,42,0.06)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 18,
+  },
+  eyebrow: {
+    display: 'inline-block',
+    color: '#16a34a',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  heroTitle: {
+    margin: 0,
+    color: '#111827',
+    fontSize: 30,
+    lineHeight: 1.2,
+  },
+  heroText: {
+    margin: '8px 0 0',
+    color: '#6b7280',
+    fontSize: 15,
+  },
+  heroActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  realtimeBadge: {
+    background: '#f9fafb',
+    border: '1px solid #eef2f7',
+    borderRadius: 999,
+    color: '#374151',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    fontWeight: 'bold',
+    padding: '9px 12px',
+    whiteSpace: 'nowrap',
+  },
+  realtimeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  billingAlert: {
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: 18,
+    padding: 22,
+    color: '#991b1b',
+    boxShadow: '0 12px 28px rgba(153,27,27,0.08)',
+  },
+  subscriptionNotice: {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 18,
+    padding: 18,
+    color: '#111827',
+    boxShadow: '0 12px 28px rgba(15,23,42,0.06)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 18,
+  },
+  billingButton: {
+    background: '#16a34a',
+    color: '#fff',
+    borderRadius: 12,
+    padding: '10px 14px',
+    textDecoration: 'none',
+    fontWeight: 'bold',
+    display: 'inline-block',
+    marginTop: 8,
+  },
+  heroButton: {
+    background: '#111827',
+    color: '#fff',
+    borderRadius: 12,
+    padding: '12px 18px',
+    textDecoration: 'none',
+    fontWeight: 'bold',
+    transition: 'transform 160ms ease, box-shadow 160ms ease',
+    boxShadow: '0 12px 24px rgba(17,24,39,0.18)',
+    whiteSpace: 'nowrap',
+  },
   cards: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
     gap: 16,
-    marginBottom: 24,
   },
-  card: {
+  metricCard: {
     background: '#fff',
     borderRadius: 18,
-    padding: 20,
-    boxShadow: '0 4px 14px rgba(0,0,0,0.06)',
+    padding: 22,
+    boxShadow: '0 14px 34px rgba(15,23,42,0.07)',
+    border: '1px solid #eef2f7',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  metricIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    background: '#ecfdf5',
+    color: '#16a34a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
+    marginBottom: 16,
   },
   cardLabel: {
     display: 'block',
     color: '#6b7280',
     fontSize: 13,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
   },
   cardValue: {
     display: 'block',
     marginTop: 8,
-    fontSize: 26,
+    fontSize: 28,
     color: '#111827',
+    lineHeight: 1.1,
+  },
+  skeletonValue: {
+    display: 'block',
+    width: '70%',
+    height: 32,
+    marginTop: 10,
+    borderRadius: 10,
+    background: 'linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%)',
+  },
+  insightsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1.6fr) minmax(320px, 0.9fr)',
+    gap: 18,
+  },
+  chartPanel: {
+    background: '#fff',
+    borderRadius: 20,
+    padding: 22,
+    boxShadow: '0 14px 34px rgba(15,23,42,0.07)',
+    border: '1px solid #eef2f7',
+  },
+  sidePanel: {
+    background: '#fff',
+    borderRadius: 20,
+    padding: 22,
+    boxShadow: '0 14px 34px rgba(15,23,42,0.07)',
+    border: '1px solid #eef2f7',
+  },
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+    marginBottom: 18,
+  },
+  panelSubtitle: {
+    margin: '4px 0 0',
+    color: '#9ca3af',
+    fontSize: 13,
+  },
+  softBadge: {
+    background: '#ecfdf5',
+    color: '#166534',
+    borderRadius: 999,
+    padding: '6px 10px',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chartBox: {
+    height: 280,
+  },
+  chartSkeleton: {
+    height: '100%',
+    borderRadius: 16,
+    background:
+      'linear-gradient(135deg, #f3f4f6 0%, #ffffff 45%, #eef2f7 100%)',
+    border: '1px solid #eef2f7',
+  },
+  recentList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+  recentItem: {
+    background: '#f9fafb',
+    border: '1px solid #eef2f7',
+    borderRadius: 14,
+    padding: 14,
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 14,
+    alignItems: 'center',
+  },
+  recentTitle: {
+    color: '#111827',
+    fontSize: 14,
+  },
+  recentMeta: {
+    margin: '4px 0 8px',
+    color: '#6b7280',
+    fontSize: 13,
+  },
+  statusPill: {
+    borderRadius: 999,
+    padding: '4px 8px',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  smallButton: {
+    background: '#fff',
+    border: '1px solid #d1d5db',
+    color: '#111827',
+    borderRadius: 10,
+    padding: '8px 11px',
+    textDecoration: 'none',
+    fontWeight: 'bold',
+    fontSize: 13,
+    cursor: 'pointer',
+    transition: 'background 160ms ease, border-color 160ms ease',
+  },
+  orderSkeleton: {
+    height: 76,
+    borderRadius: 14,
+    background: 'linear-gradient(90deg, #f3f4f6 0%, #ffffff 50%, #f3f4f6 100%)',
+    border: '1px solid #eef2f7',
+  },
+  popularPanel: {
+    background: '#fff',
+    borderRadius: 20,
+    padding: 22,
+    boxShadow: '0 14px 34px rgba(15,23,42,0.07)',
+    border: '1px solid #eef2f7',
+  },
+  popularGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 12,
+  },
+  popularCard: {
+    background: '#f9fafb',
+    border: '1px solid #eef2f7',
+    borderRadius: 14,
+    padding: 12,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  productSkeleton: {
+    height: 74,
+    borderRadius: 14,
+    background: 'linear-gradient(90deg, #f3f4f6 0%, #ffffff 50%, #f3f4f6 100%)',
+    border: '1px solid #eef2f7',
+  },
+  popularImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    objectFit: 'cover',
+  },
+  popularFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    background: '#dcfce7',
+    color: '#166534',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: 'bold',
+    flexShrink: 0,
+  },
+  popularName: {
+    display: 'block',
+    color: '#111827',
+    fontSize: 14,
+  },
+  popularMeta: {
+    margin: '4px 0 0',
+    color: '#6b7280',
+    fontSize: 13,
+  },
+  emptyCompact: {
+    margin: 0,
+    color: '#9ca3af',
+    fontSize: 14,
+  },
+  emptyState: {
+    minHeight: 120,
+    borderRadius: 16,
+    background: '#f9fafb',
+    border: '1px dashed #d1d5db',
+    color: '#6b7280',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 18,
+    textAlign: 'center',
+    gridColumn: '1 / -1',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15,23,42,0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+    zIndex: 50,
+  },
+  modal: {
+    width: 'min(680px, 100%)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    background: '#fff',
+    borderRadius: 20,
+    padding: 22,
+    boxShadow: '0 24px 80px rgba(15,23,42,0.28)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 16,
+    alignItems: 'flex-start',
+    marginBottom: 18,
+  },
+  modalTitle: {
+    margin: 0,
+    color: '#111827',
+    fontSize: 24,
+  },
+  closeButton: {
+    border: '1px solid #d1d5db',
+    background: '#fff',
+    color: '#374151',
+    borderRadius: 999,
+    padding: '8px 12px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  modalGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: 10,
+    marginBottom: 18,
+  },
+  detailBox: {
+    background: '#f9fafb',
+    border: '1px solid #eef2f7',
+    borderRadius: 14,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  detailLabel: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  detailValue: {
+    color: '#111827',
+    fontSize: 14,
+  },
+  modalSection: {
+    borderTop: '1px solid #eef2f7',
+    paddingTop: 14,
+    marginTop: 14,
+  },
+  modalSectionTitle: {
+    margin: '0 0 10px',
+    color: '#111827',
+    fontSize: 15,
+  },
+  modalItems: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  modalItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 12,
+    background: '#f9fafb',
+    borderRadius: 12,
+    padding: 12,
+  },
+  modalItemName: {
+    color: '#111827',
+    fontSize: 14,
+  },
+  modalItemNotes: {
+    margin: '4px 0 0',
+    color: '#6b7280',
+    fontSize: 13,
+  },
+  modalItemPrice: {
+    color: '#111827',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
+  },
+  modalText: {
+    margin: 0,
+    color: '#374151',
+    fontSize: 14,
+    lineHeight: 1.5,
   },
   panel: {
     background: '#fff',

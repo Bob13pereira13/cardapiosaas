@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN IF NOT EXISTS "asaasCustomerId" TEXT,
+ADD COLUMN IF NOT EXISTS "asaasSubscriptionId" TEXT;

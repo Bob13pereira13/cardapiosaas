@@ -1,10 +1,24 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { SubscriptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
+
+  private hideTrackingToken<
+    T extends {
+      metaAccessToken?: string | null;
+      metaAccessTokenConfigured?: boolean;
+    },
+  >(user: T) {
+    const { metaAccessToken, ...safeUser } = user;
+    return {
+      ...safeUser,
+      metaAccessTokenConfigured: Boolean(metaAccessToken),
+    };
+  }
 
   private gerarSlug(nome: string) {
     return nome
@@ -15,9 +29,20 @@ export class UsersService {
       .replace(/(^-|-$)+/g, '');
   }
 
+  private normalizeDomain(domain?: string) {
+    return domain
+      ?.trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/.*$/, '');
+  }
+
   async create(data: { nome: string; email: string; password: string }) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
     const slug = this.gerarSlug(data.nome);
+    const trialEndsAt = new Date();
+    trialEndsAt.setDate(trialEndsAt.getDate() + 7);
 
     return this.prisma.user.create({
       data: {
@@ -25,14 +50,20 @@ export class UsersService {
         email: data.email,
         password: hashedPassword,
         slug,
+        subscriptionStatus: SubscriptionStatus.TRIAL,
+        trialEndsAt,
       },
     });
   }
 
   async findByEmail(email: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { email },
     });
+
+    if (!user) return null;
+
+    return this.expireTrialIfNeeded(user);
   }
 
   async updateWhatsapp(userId: number, whatsapp: string) {
@@ -43,7 +74,7 @@ export class UsersService {
   }
 
   async findById(id: number) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
         id: true,
@@ -57,8 +88,26 @@ export class UsersService {
         horarioAbertura: true,
         horarioFechamento: true,
         corPrimaria: true,
+        taxaEntrega: true,
+        role: true,
+        isActive: true,
+        plan: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        gtmId: true,
+        ga4MeasurementId: true,
+        metaPixelId: true,
+        metaAccessToken: true,
+        customDomain: true,
+        customDomainVerified: true,
+        customDomainStatus: true,
       },
     });
+
+    if (!user) return null;
+
+    const userWithTrialStatus = await this.expireTrialIfNeeded(user);
+    return this.hideTrackingToken(userWithTrialStatus);
   }
 
   async setResetToken(userId: number, token: string, expiry: Date) {
@@ -80,7 +129,11 @@ export class UsersService {
   async updatePassword(userId: number, hashedPassword: string) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword, resetToken: null, resetTokenExpiry: null },
+      data: {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
     });
   }
 
@@ -96,7 +149,13 @@ export class UsersService {
       horarioAbertura?: string;
       horarioFechamento?: string;
       corPrimaria?: string;
-    }
+      taxaEntrega?: number;
+      gtmId?: string;
+      ga4MeasurementId?: string;
+      metaPixelId?: string;
+      metaAccessToken?: string;
+      customDomain?: string;
+    },
   ) {
     let slugFormatado: string | undefined;
 
@@ -115,7 +174,28 @@ export class UsersService {
       }
     }
 
-    return this.prisma.user.update({
+    const customDomain = this.normalizeDomain(data.customDomain);
+    let customDomainChanged = false;
+    if (customDomain) {
+      const currentUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { customDomain: true },
+      });
+      customDomainChanged = currentUser?.customDomain !== customDomain;
+
+      const domainOwner = await this.prisma.user.findFirst({
+        where: {
+          customDomain,
+          NOT: { id: userId },
+        },
+      });
+
+      if (domainOwner) {
+        throw new BadRequestException('Este dominio ja esta em uso.');
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
         nome: data.nome,
@@ -127,6 +207,33 @@ export class UsersService {
         horarioAbertura: data.horarioAbertura,
         horarioFechamento: data.horarioFechamento,
         corPrimaria: data.corPrimaria,
+        taxaEntrega: data.taxaEntrega,
+        gtmId: data.gtmId === '' ? null : data.gtmId,
+        ga4MeasurementId:
+          data.ga4MeasurementId === '' ? null : data.ga4MeasurementId,
+        metaPixelId: data.metaPixelId === '' ? null : data.metaPixelId,
+        metaAccessToken:
+          data.metaAccessToken === ''
+            ? null
+            : data.metaAccessToken === undefined
+              ? undefined
+              : data.metaAccessToken,
+        customDomain:
+          data.customDomain === undefined ? undefined : customDomain || null,
+        customDomainVerified:
+          data.customDomain === undefined
+            ? undefined
+            : customDomainChanged || !customDomain
+              ? false
+              : undefined,
+        customDomainStatus:
+          data.customDomain === undefined
+            ? undefined
+            : customDomainChanged && customDomain
+              ? 'PENDING'
+              : !customDomain
+                ? null
+                : undefined,
       },
       select: {
         id: true,
@@ -140,7 +247,47 @@ export class UsersService {
         horarioAbertura: true,
         horarioFechamento: true,
         corPrimaria: true,
+        taxaEntrega: true,
+        role: true,
+        isActive: true,
+        plan: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        gtmId: true,
+        ga4MeasurementId: true,
+        metaPixelId: true,
+        metaAccessToken: true,
+        customDomain: true,
+        customDomainVerified: true,
+        customDomainStatus: true,
       },
     });
+
+    return this.hideTrackingToken(updatedUser);
+  }
+
+  private async expireTrialIfNeeded<
+    T extends {
+      id: number;
+      role: UserRole;
+      subscriptionStatus: SubscriptionStatus;
+      trialEndsAt: Date | null;
+    },
+  >(user: T): Promise<T> {
+    if (
+      user.role !== UserRole.RESTAURANT ||
+      user.subscriptionStatus !== SubscriptionStatus.TRIAL ||
+      !user.trialEndsAt ||
+      user.trialEndsAt.getTime() >= Date.now()
+    ) {
+      return user;
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { subscriptionStatus: SubscriptionStatus.OVERDUE },
+    });
+
+    return { ...user, subscriptionStatus: SubscriptionStatus.OVERDUE };
   }
 }

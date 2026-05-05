@@ -51,6 +51,18 @@ enum OptionPriceMode {
   HIGHEST
 }
 
+enum UserRole {
+  ADMIN
+  RESTAURANT
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  OVERDUE
+  CANCELED
+}
+
 // ─── MODELOS ─────────────────────────────────────────────────────
 
 model User {
@@ -68,6 +80,20 @@ model User {
   horarioFechamento String?
   corPrimaria       String?    @default("#16a34a")
   taxaEntrega       Float      @default(0)
+  role              UserRole   @default(RESTAURANT)
+  isActive          Boolean    @default(true)
+  plan              String     @default("FREE")
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  trialEndsAt       DateTime?
+  asaasCustomerId   String?
+  asaasSubscriptionId String?
+  gtmId             String?
+  ga4MeasurementId  String?
+  metaPixelId       String?
+  metaAccessToken   String?
+  customDomain      String?    @unique
+  customDomainVerified Boolean @default(false)
+  customDomainStatus String?   @default("PENDING")
 
   resetToken        String?
   resetTokenExpiry  DateTime?
@@ -76,6 +102,7 @@ model User {
   products          Product[]
   orders            Order[]
   coupons           Coupon[]
+  customers         Customer[]
 }
 
 model Category {
@@ -136,6 +163,8 @@ model Order {
   id                Int           @id @default(autoincrement())
   userId            Int
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId        Int?
+  customer          Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   orderNumber       Int
 
   customerName      String
@@ -158,6 +187,9 @@ model Order {
   couponCode        String?
 
   externalPaymentId String?
+  pixQrCode         String?
+  pixCopyPaste      String?
+  paidAt            DateTime?
 
   items             OrderItem[]
   history           OrderStatusHistory[]
@@ -171,6 +203,25 @@ model Order {
   @@unique([userId, orderNumber])
   @@index([userId, orderStatus])
   @@index([userId, createdAt])
+  @@index([customerId])
+}
+
+model Customer {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  phone       String
+  document    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastOrderAt DateTime?
+
+  orders      Order[]
+
+  @@unique([userId, phone])
+  @@index([userId, name])
+  @@index([userId, lastOrderAt])
 }
 
 model OrderItem {

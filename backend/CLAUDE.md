@@ -63,9 +63,29 @@ Migrations: `prisma/migrations/`
 
 Static files are served at `/uploads` via `ServeStaticModule` pointed at `./uploads`. Uploaded filenames are `{timestamp}-{uuid}.{ext}`.
 
+## Variáveis de ambiente
+
+Copie `.env.example` para `.env` e preencha os valores. Variáveis obrigatórias:
+
+| Variável | Descrição |
+|----------|-----------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Secret para assinar JWTs (use string longa e aleatória) |
+
+Variáveis do Asaas (pagamento e assinaturas):
+
+| Variável | Descrição |
+|----------|-----------|
+| `ASAAS_API_KEY` | Chave de API do Asaas (`$aact_...`). Se ausente, o backend sobe com warning e pagamento Pix fica desabilitado. |
+| `ASAAS_BASE_URL` | URL base da API. Sandbox: `https://api-sandbox.asaas.com/v3` — Produção: `https://api.asaas.com/v3` |
+| `ASAAS_WEBHOOK_TOKEN` | Token secreto para validar webhooks. Gere com: `openssl rand -base64 32` |
+
+Links úteis:
+- Sandbox (testes): https://sandbox.asaas.com/
+- Produção: https://www.asaas.com/
+
 ## Key Notes
 
-- `DATABASE_URL` is the only required env variable (`.env` file).
-- The JWT secret (`'segredo-temporario'`) must be moved to an env variable before production deployment.
-- Upload URLs are hardcoded to `http://localhost:3000` — this needs an env variable for production.
-- No global validation pipe is configured; DTOs lack `class-validator` decorators as of the current state.
+- The JWT secret must be set via `JWT_SECRET` env variable before production.
+- Upload URLs use `API_URL` env variable; fallback is `http://localhost:3000` in dev.
+- `prisma migrate deploy` applies pending migrations in production (never `db push` in prod).

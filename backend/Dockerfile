@@ -24,8 +24,11 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./
 
 RUN npx prisma generate
-RUN mkdir -p uploads
+RUN mkdir -p /uploads
+
+ENV UPLOADS_DIR=/uploads
+VOLUME ["/uploads"]
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

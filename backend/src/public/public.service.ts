@@ -5,7 +5,15 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PublicService {
   constructor(private prisma: PrismaService) {}
 
-  async getCardapio(slug: string) {
+  private normalizeHost(host?: string) {
+    return host
+      ?.split(':')[0]
+      ?.trim()
+      .toLowerCase()
+      .replace(/^www\./, '');
+  }
+
+  async getCardapio(slug: string, host?: string) {
     const productSelect = {
       id: true,
       nome: true,
@@ -17,8 +25,14 @@ export class PublicService {
 
     const onlyAvailable = { disponivel: true };
 
+    const normalizedHost = this.normalizeHost(host);
     const user = await this.prisma.user.findFirst({
-      where: { slug },
+      where:
+        normalizedHost && slug === 'domain'
+          ? {
+              customDomain: normalizedHost,
+            }
+          : { slug },
       select: {
         id: true,
         nome: true,
@@ -30,6 +44,12 @@ export class PublicService {
         horarioAbertura: true,
         horarioFechamento: true,
         corPrimaria: true,
+        gtmId: true,
+        ga4MeasurementId: true,
+        metaPixelId: true,
+        customDomain: true,
+        customDomainVerified: true,
+        customDomainStatus: true,
         categories: {
           orderBy: { id: 'asc' },
           select: {
@@ -57,13 +77,33 @@ export class PublicService {
       select: productSelect,
     });
 
-    const allCategories = uncategorized.length > 0
-      ? [...user.categories, { id: 0, nome: 'Outros', products: uncategorized }]
-      : user.categories;
+    const allCategories =
+      uncategorized.length > 0
+        ? [
+            ...user.categories,
+            { id: 0, nome: 'Outros', products: uncategorized },
+          ]
+        : user.categories;
 
-    const categories = allCategories.filter(c => c.products.length > 0);
+    const categories = allCategories.filter((c) => c.products.length > 0);
 
-    const { id: _id, ...publicFields } = user;
-    return { ...publicFields, categories };
+    return {
+      nome: user.nome,
+      whatsapp: user.whatsapp,
+      slug: user.slug,
+      logo: user.logo,
+      banner: user.banner,
+      aberto: user.aberto,
+      horarioAbertura: user.horarioAbertura,
+      horarioFechamento: user.horarioFechamento,
+      corPrimaria: user.corPrimaria,
+      gtmId: user.gtmId,
+      ga4MeasurementId: user.ga4MeasurementId,
+      metaPixelId: user.metaPixelId,
+      customDomain: user.customDomain,
+      customDomainVerified: user.customDomainVerified,
+      customDomainStatus: user.customDomainStatus,
+      categories,
+    };
   }
 }

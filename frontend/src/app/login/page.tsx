@@ -1,18 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { API_URL } from '@/lib/config'
 import { getToken } from '@/lib/auth'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   // Redireciona se já está autenticado
-  if (typeof window !== 'undefined' && getToken()) {
-    window.location.href = '/dashboard'
-  }
+  useEffect(() => {
+    if (getToken()) router.replace('/dashboard')
+  }, [router])
 
   async function handleLogin() {
     if (!email || !password) {
@@ -43,7 +46,7 @@ export default function LoginPage() {
       localStorage.setItem('token', data.access_token)
 
       // 🚀 REDIRECIONA
-      window.location.href = '/dashboard'
+      router.replace('/dashboard')
     } catch (error) {
       console.error(error)
       alert('Email ou senha inválidos.')
@@ -77,15 +80,15 @@ export default function LoginPage() {
           {loading ? 'Entrando...' : 'Entrar'}
         </button>
 
-        <a href="/forgot-password" style={styles.forgotLink}>
+        <Link href="/forgot-password" style={styles.forgotLink}>
           Esqueci minha senha
-        </a>
+        </Link>
 
         <p style={styles.registerRow}>
           Não tem conta?{' '}
-          <a href="/cadastro" style={styles.registerLink}>
+          <Link href="/cadastro" style={styles.registerLink}>
             Criar conta grátis
-          </a>
+          </Link>
         </p>
       </section>
     </main>

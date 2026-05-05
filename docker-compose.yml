@@ -1,5 +1,5 @@
 services:
-  db:
+  database:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: cardapio
@@ -17,10 +17,17 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: postgresql://cardapio:${POSTGRES_PASSWORD:-cardapio_secret}@db:5432/cardapio
+      DATABASE_URL: postgresql://cardapio:${POSTGRES_PASSWORD:-cardapio_secret}@database:5432/cardapio
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
-      API_URL: ${API_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-https://cardapiopedeai.com.br}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://cardapiopedeai.com.br,http://cardapiopedeai.com.br,https://www.cardapiopedeai.com.br,http://www.cardapiopedeai.com.br}
+      ALLOW_CUSTOM_DOMAIN_ORIGINS: ${ALLOW_CUSTOM_DOMAIN_ORIGINS:-false}
+      APP_DOMAIN: ${APP_DOMAIN:-cardapiopedeai.com.br}
+      API_URL: ${API_URL:-https://api.cardapiopedeai.com.br}
+      UPLOADS_DIR: /uploads
+      ASAAS_API_KEY: ${ASAAS_API_KEY:?ASAAS_API_KEY env var is required}
+      ASAAS_BASE_URL: ${ASAAS_BASE_URL:-https://sandbox.asaas.com/api/v3}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?ASAAS_WEBHOOK_TOKEN env var is required}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -29,20 +36,68 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - uploads_data:/app/uploads
+      - uploads_data:/uploads
     depends_on:
-      db:
+      database:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend-api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
+      - "traefik.http.routers.backend-api.entrypoints=websecure"
+      - "traefik.http.routers.backend-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-api.service=backend"
+      - "traefik.http.routers.backend-path.rule=Host(`${APP_DOMAIN:-localhost}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.backend-path.entrypoints=websecure"
+      - "traefik.http.routers.backend-path.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.backend-path.middlewares=strip-api"
+      - "traefik.http.routers.backend-path.service=backend"
+      - "traefik.http.middlewares.strip-api.stripprefix.prefixes=/api"
+      - "traefik.http.services.backend.loadbalancer.server.port=3000"
 
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.cardapiopedeai.com.br}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://cardapiopedeai.com.br}
     ports:
       - "3001:3000"
     depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${APP_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend.service=frontend"
+      - "traefik.http.routers.custom-domains.rule=HostRegexp(`{host:.+}`)"
+      - "traefik.http.routers.custom-domains.entrypoints=websecure"
+      - "traefik.http.routers.custom-domains.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.custom-domains.priority=1"
+      - "traefik.http.routers.custom-domains.service=frontend"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+  proxy:
+    image: traefik:v3.0
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL env var is required}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/acme:/letsencrypt
+    depends_on:
+      - frontend
       - backend
 
 volumes:
