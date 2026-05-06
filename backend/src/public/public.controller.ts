@@ -13,4 +13,14 @@ export class PublicController {
   ) {
     return this.publicService.getCardapio(slug, forwardedHost || host);
   }
+
+  @Get('order/:id')
+  getOrder(@Param('id') id: string) {
+    return this.publicService.getOrder(Number(id));
+  }
+
+  @Get('order/:id/status')
+  getOrderStatus(@Param('id') id: string) {
+    return this.publicService.getOrderStatus(Number(id));
+  }
 }

@@ -4,6 +4,7 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { OrdersGateway } from './orders.gateway';
 import { AsaasPaymentService } from './asaas-payment.service';
+import { PaymentsController } from './payments.controller';
 import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
@@ -13,7 +14,7 @@ import { CouponsModule } from '../coupons/coupons.module';
       secret: process.env.JWT_SECRET,
     }),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, PaymentsController],
   providers: [OrdersService, OrdersGateway, AsaasPaymentService],
 })
 export class OrdersModule {}

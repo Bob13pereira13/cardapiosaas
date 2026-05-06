@@ -1,170 +1,157 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { io, Socket } from 'socket.io-client'
+import { Download, Plus, Search } from 'lucide-react'
+import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
+import { getAllOrigins, ORIGIN_META, OrderOrigin } from '@/lib/order-origin'
+import {
+  DeliveryType,
+  Order,
+  OrderStatus,
+  PaymentMethod,
+  ProductOption,
+  STATUS_LABEL,
+  formatCurrency,
+} from '@/lib/order-types'
+import { PageHeader } from '@/components/admin/PageHeader'
+import { OrderListItem } from '@/components/admin/OrderListItem'
+import { OrderDetailPanel } from '@/components/admin/OrderDetailPanel'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 
-type DeliveryType = 'DELIVERY' | 'PICKUP' | 'DINE_IN'
-type OrderStatus = 'PENDING' | 'CONFIRMED' | 'IN_PREPARATION' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELED'
-type PaymentMethod = 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'ONLINE_PIX' | 'ONLINE_CARD'
-type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED'
+type StatusFilter = 'ALL' | 'PENDING' | 'IN_PREPARATION' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELED'
+type PeriodFilter = 'TODAY' | 'WEEK' | 'MONTH'
+type ManualItem = { productId: string; quantity: number; itemNotes: string }
 
-type OrderItem = {
-  id: number
-  productNameSnapshot: string
-  quantity: number
-  unitPrice: number
-  itemTotal: number
+const STATUS_FILTERS: Array<{ label: string; value: StatusFilter; statuses?: OrderStatus[] }> = [
+  { label: 'Todos', value: 'ALL' },
+  { label: 'Pendentes', value: 'PENDING', statuses: ['PENDING', 'CONFIRMED'] },
+  { label: 'Em preparo', value: 'IN_PREPARATION', statuses: ['IN_PREPARATION', 'READY'] },
+  { label: 'Sairam', value: 'OUT_FOR_DELIVERY', statuses: ['OUT_FOR_DELIVERY'] },
+  { label: 'Concluidos', value: 'DELIVERED', statuses: ['DELIVERED'] },
+  { label: 'Cancelados', value: 'CANCELED', statuses: ['CANCELED'] },
+]
+
+const PERIODS: Array<{ label: string; value: PeriodFilter }> = [
+  { label: 'Hoje', value: 'TODAY' },
+  { label: 'Ultima semana', value: 'WEEK' },
+  { label: 'Ultimo mes', value: 'MONTH' },
+]
+
+const INITIAL_MANUAL_ITEM: ManualItem = { productId: '', quantity: 1, itemNotes: '' }
+
+function getDateFrom(period: PeriodFilter) {
+  const date = new Date()
+  if (period === 'TODAY') date.setHours(0, 0, 0, 0)
+  if (period === 'WEEK') date.setDate(date.getDate() - 7)
+  if (period === 'MONTH') date.setMonth(date.getMonth() - 1)
+  return date.toISOString()
 }
 
-type Order = {
-  id: number
-  orderNumber: number
-  customerName: string
-  customerPhone: string
-  deliveryType: DeliveryType
-  orderStatus: OrderStatus
-  paymentMethod: PaymentMethod
-  paymentStatus?: PaymentStatus
-  subtotal: number
-  deliveryFee: number
-  discountAmount: number
-  total: number
-  notes?: string
-  couponCode?: string
-  createdAt: string
-  items: OrderItem[]
-}
-
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  PENDING: 'Pendente',
-  CONFIRMED: 'Confirmado',
-  IN_PREPARATION: 'Em preparo',
-  READY: 'Pronto',
-  OUT_FOR_DELIVERY: 'Saiu p/ entrega',
-  DELIVERED: 'Entregue',
-  CANCELED: 'Cancelado',
-}
-
-const STATUS_COLOR: Record<OrderStatus, string> = {
-  PENDING: '#f59e0b',
-  CONFIRMED: '#3b82f6',
-  IN_PREPARATION: '#8b5cf6',
-  READY: '#16a34a',
-  OUT_FOR_DELIVERY: '#0891b2',
-  DELIVERED: '#6b7280',
-  CANCELED: '#ef4444',
-}
-
-const DELIVERY_LABEL: Record<DeliveryType, string> = {
-  DELIVERY: 'Entrega',
-  PICKUP: 'Retirada',
-  DINE_IN: 'Mesa',
-}
-
-const PAYMENT_LABEL: Record<PaymentMethod, string> = {
-  PIX: 'PIX',
-  CREDIT_CARD: 'Cartão de crédito',
-  DEBIT_CARD: 'Cartão de débito',
-  CASH: 'Dinheiro',
-  ONLINE_PIX: 'PIX online',
-  ONLINE_CARD: 'Cartão online',
-}
-
-function getNextActions(order: Order): { label: string; status: OrderStatus; danger?: boolean }[] {
-  switch (order.orderStatus) {
-    case 'PENDING':
-      return [
-        { label: 'Confirmar', status: 'CONFIRMED' },
-        { label: 'Cancelar', status: 'CANCELED', danger: true },
-      ]
-    case 'CONFIRMED':
-      return [
-        { label: 'Iniciar preparo', status: 'IN_PREPARATION' },
-        { label: 'Cancelar', status: 'CANCELED', danger: true },
-      ]
-    case 'IN_PREPARATION':
-      return [
-        { label: 'Marcar como pronto', status: 'READY' },
-        { label: 'Cancelar', status: 'CANCELED', danger: true },
-      ]
-    case 'READY':
-      if (order.deliveryType === 'DELIVERY') {
-        return [
-          { label: 'Saiu p/ entrega', status: 'OUT_FOR_DELIVERY' },
-          { label: 'Cancelar', status: 'CANCELED', danger: true },
-        ]
-      }
-      return [
-        { label: 'Marcar como entregue', status: 'DELIVERED' },
-        { label: 'Cancelar', status: 'CANCELED', danger: true },
-      ]
-    case 'OUT_FOR_DELIVERY':
-      return [
-        { label: 'Marcar como entregue', status: 'DELIVERED' },
-        { label: 'Cancelar', status: 'CANCELED', danger: true },
-      ]
-    default:
-      return []
+function playNewOrderSound() {
+  try {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext
+    const ctx = new AudioContextCtor()
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.frequency.value = 880
+    gain.gain.value = 0.05
+    oscillator.start()
+    oscillator.stop(ctx.currentTime + 0.16)
+  } catch {
+    // Audio is best-effort.
   }
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return 'agora'
-  if (minutes < 60) return `${minutes}min atrás`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h atrás`
-  return new Date(dateStr).toLocaleDateString('pt-BR')
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext
+  }
 }
-
-const FILTER_TABS: Array<{ label: string; value: OrderStatus | 'ALL' }> = [
-  { label: 'Todos', value: 'ALL' },
-  { label: 'Pendentes', value: 'PENDING' },
-  { label: 'Confirmados', value: 'CONFIRMED' },
-  { label: 'Em preparo', value: 'IN_PREPARATION' },
-  { label: 'Prontos', value: 'READY' },
-  { label: 'Em entrega', value: 'OUT_FOR_DELIVERY' },
-  { label: 'Entregues', value: 'DELIVERED' },
-  { label: 'Cancelados', value: 'CANCELED' },
-]
 
 export default function PedidosPage() {
   const [orders, setOrders] = useState<Order[]>([])
-  const [filter, setFilter] = useState<OrderStatus | 'ALL'>('ALL')
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const [originFilter, setOriginFilter] = useState<OrderOrigin | 'ALL'>('ALL')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('TODAY')
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [updatingId, setUpdatingId] = useState<number | null>(null)
-  const [newIds, setNewIds] = useState<Set<number>>(new Set())
   const [connected, setConnected] = useState(false)
+  const [updatingId, setUpdatingId] = useState<number | null>(null)
+  const [highlightedIds, setHighlightedIds] = useState<Set<number>>(new Set())
+  const [manualOpen, setManualOpen] = useState(false)
+  const [creatingManual, setCreatingManual] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualPhone, setManualPhone] = useState('')
+  const [manualDeliveryType, setManualDeliveryType] = useState<DeliveryType>('PICKUP')
+  const [manualPayment, setManualPayment] = useState<PaymentMethod>('CASH')
+  const [manualNotes, setManualNotes] = useState('')
+  const [manualStreet, setManualStreet] = useState('')
+  const [manualNumber, setManualNumber] = useState('')
+  const [manualNeighborhood, setManualNeighborhood] = useState('')
+  const [manualCity, setManualCity] = useState('')
+  const [manualZipcode, setManualZipcode] = useState('')
+  const [manualItems, setManualItems] = useState<ManualItem[]>([INITIAL_MANUAL_ITEM])
   const socketRef = useRef<Socket | null>(null)
 
-  const loadOrders = useCallback(async (statusFilter: OrderStatus | 'ALL') => {
+  const selectedOrder = orders.find((order) => order.id === selectedId) ?? null
+
+  const loadOrders = useCallback(async () => {
     const token = getToken()
-    if (!token) { window.location.href = '/login'; return }
+    if (!token) {
+      window.location.href = '/login'
+      return
+    }
 
-    const params = new URLSearchParams({ limit: '50' })
-    if (statusFilter !== 'ALL') params.set('status', statusFilter)
+    const params = new URLSearchParams({
+      limit: '100',
+      dateFrom: getDateFrom(periodFilter),
+    })
+    if (originFilter !== 'ALL') params.set('origin', originFilter)
 
-    const res = await fetch(`${API_URL}/orders?${params}`, {
+    const response = await fetch(`${API_URL}/orders?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (handleUnauthorized(res)) return
-
-    const data: Order[] = await res.json()
+    if (handleUnauthorized(response)) return
+    const data = (await response.json()) as Order[]
     setOrders(data)
+    setSelectedId((current) => current ?? data[0]?.id ?? null)
+  }, [originFilter, periodFilter])
+
+  const loadProducts = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+
+    const response = await fetch(`${API_URL}/products?page=1&limit=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (handleUnauthorized(response)) return
+    const data = (await response.json()) as { data?: ProductOption[] }
+    setProducts((data.data ?? []).filter((product) => product.disponivel !== false))
   }, [])
 
   useEffect(() => {
     async function init() {
       setLoading(true)
-      await loadOrders('ALL')
+      await Promise.all([loadOrders(), loadProducts()])
       setLoading(false)
     }
-    init()
-  }, [loadOrders])
+    void init()
+  }, [loadOrders, loadProducts])
 
   useEffect(() => {
     const token = getToken()
@@ -172,31 +159,31 @@ export default function PedidosPage() {
 
     const socket = io(API_URL, { auth: { token } })
     socketRef.current = socket
-
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))
-
     socket.on('order:new', (order: Order) => {
-      setOrders((prev) => [order, ...prev])
-      setNewIds((prev) => new Set(prev).add(order.id))
-      setTimeout(() => {
-        setNewIds((prev) => {
-          const next = new Set(prev)
+      setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)])
+      setHighlightedIds((current) => new Set(current).add(order.id))
+      toast.success(`Novo pedido #${order.orderNumber}`, {
+        description: `${order.customerName} - ${formatCurrency(order.total)}`,
+      })
+      playNewOrderSound()
+      window.setTimeout(() => {
+        setHighlightedIds((current) => {
+          const next = new Set(current)
           next.delete(order.id)
           return next
         })
-      }, 8000)
+      }, 9000)
     })
-
     socket.on('order:status-changed', ({ orderId, status }: { orderId: number; status: OrderStatus }) => {
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, orderStatus: status } : o))
+      setOrders((current) =>
+        current.map((order) => (order.id === orderId ? { ...order, orderStatus: status } : order)),
       )
     })
-
     socket.on('order:payment-confirmed', ({ orderId }: { orderId: number }) => {
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, paymentStatus: 'PAID' } : o))
+      setOrders((current) =>
+        current.map((order) => (order.id === orderId ? { ...order, paymentStatus: 'PAID' } : order)),
       )
     })
 
@@ -205,499 +192,416 @@ export default function PedidosPage() {
     }
   }, [])
 
-  async function handleFilterChange(value: OrderStatus | 'ALL') {
-    setFilter(value)
-    setLoading(true)
-    await loadOrders(value)
-    setLoading(false)
-  }
+  const filteredOrders = useMemo(() => {
+    const statusMeta = STATUS_FILTERS.find((item) => item.value === statusFilter)
+    const allowedStatuses = statusMeta?.statuses
+    const normalizedSearch = search.trim().toLowerCase()
 
-  async function handleUpdateStatus(order: Order, newStatus: OrderStatus) {
+    return orders.filter((order) => {
+      if (allowedStatuses && !allowedStatuses.includes(order.orderStatus)) return false
+      if (!normalizedSearch) return true
+      return (
+        order.customerName.toLowerCase().includes(normalizedSearch) ||
+        String(order.orderNumber).includes(normalizedSearch) ||
+        order.customerPhone.includes(normalizedSearch)
+      )
+    })
+  }, [orders, search, statusFilter])
+
+  const summary = useMemo(() => {
+    const total = filteredOrders.reduce((sum, order) => sum + order.total, 0)
+    return {
+      count: filteredOrders.length,
+      revenue: total,
+      average: filteredOrders.length ? total / filteredOrders.length : 0,
+    }
+  }, [filteredOrders])
+
+  async function updateStatus(order: Order, status: OrderStatus) {
     const token = getToken()
     if (!token) return
 
     setUpdatingId(order.id)
     try {
-      const res = await fetch(`${API_URL}/orders/${order.id}/status`, {
+      const response = await fetch(`${API_URL}/orders/${order.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ orderStatus: newStatus }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orderStatus: status }),
       })
-      if (handleUnauthorized(res)) return
-      if (!res.ok) {
-        const err = await res.json()
-        alert(err.message || 'Erro ao atualizar status.')
+      if (handleUnauthorized(response)) return
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.message || 'Erro ao atualizar pedido.')
         return
       }
-      setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, orderStatus: newStatus } : o))
+      setOrders((current) =>
+        current.map((item) => (item.id === order.id ? { ...item, orderStatus: status } : item)),
       )
+      toast.success(`Pedido #${order.orderNumber}: ${STATUS_LABEL[status]}`)
     } finally {
       setUpdatingId(null)
     }
   }
 
-  const displayed = filter === 'ALL'
-    ? orders
-    : orders.filter((o) => o.orderStatus === filter)
+  function updateManualItem(index: number, patch: Partial<ManualItem>) {
+    setManualItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    )
+  }
+
+  async function createManualOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const token = getToken()
+    if (!token) return
+
+    const items = manualItems
+      .filter((item) => item.productId)
+      .map((item) => ({
+        productId: Number(item.productId),
+        quantity: item.quantity,
+        itemNotes: item.itemNotes || undefined,
+      }))
+
+    if (!manualName.trim() || !manualPhone.trim() || items.length === 0) {
+      toast.error('Informe cliente, telefone e pelo menos um item.')
+      return
+    }
+
+    const body: Record<string, unknown> = {
+      customerName: manualName.trim(),
+      customerPhone: manualPhone.replace(/[^\d+]/g, ''),
+      deliveryType: manualDeliveryType,
+      paymentMethod: manualPayment,
+      notes: manualNotes.trim() || undefined,
+      items,
+    }
+
+    if (manualDeliveryType === 'DELIVERY') {
+      body.customerAddress = {
+        street: manualStreet.trim(),
+        number: manualNumber.trim(),
+        neighborhood: manualNeighborhood.trim(),
+        city: manualCity.trim(),
+        zipcode: manualZipcode.trim(),
+      }
+    }
+
+    setCreatingManual(true)
+    try {
+      const response = await fetch(`${API_URL}/orders/manual`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      })
+      if (handleUnauthorized(response)) return
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.message || 'Erro ao criar pedido manual.')
+        return
+      }
+      const order = (await response.json()) as Order
+      setOrders((current) => [order, ...current])
+      setSelectedId(order.id)
+      setManualOpen(false)
+      setManualName('')
+      setManualPhone('')
+      setManualNotes('')
+      setManualItems([INITIAL_MANUAL_ITEM])
+      toast.success(`Pedido manual #${order.orderNumber} criado`)
+    } finally {
+      setCreatingManual(false)
+    }
+  }
 
   return (
-    <div>
-      {/* Header */}
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Pedidos</h1>
-          <p style={styles.subtitle}>{orders.length} pedido{orders.length !== 1 ? 's' : ''} carregado{orders.length !== 1 ? 's' : ''}</p>
-        </div>
-        <div style={styles.wsIndicator}>
-          <span style={{ ...styles.wsDot, background: connected ? '#16a34a' : '#ef4444' }} />
-          <span style={styles.wsLabel}>{connected ? 'Tempo real ativo' : 'Desconectado'}</span>
-        </div>
-      </div>
+    <div className="min-h-screen bg-zinc-50">
+      <Toaster richColors position="top-right" />
+      <div className="space-y-5">
+        <PageHeader
+          title="Pedidos"
+          description="Acompanhe pedidos por origem, status e periodo."
+          actions={
+            <>
+              <Button variant="outline" className="gap-2">
+                <Download className="h-4 w-4" />
+                Exportar
+              </Button>
+              <Button asChild className="gap-2 bg-brand-red hover:bg-brand-red/90">
+                <Link href="/dashboard/pedidos/novo">
+                  <Plus className="h-4 w-4" />
+                  Novo pedido
+                </Link>
+              </Button>
+            </>
+          }
+        />
 
-      {/* Filter tabs */}
-      <div style={styles.tabs}>
-        {FILTER_TABS.map((tab) => {
-          const count = tab.value === 'ALL'
-            ? orders.length
-            : orders.filter((o) => o.orderStatus === tab.value).length
-          return (
-            <button
-              key={tab.value}
-              onClick={() => handleFilterChange(tab.value)}
-              style={{
-                ...styles.tab,
-                ...(filter === tab.value ? styles.tabActive : {}),
-              }}
+        <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por cliente, telefone ou numero"
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <span className={cn('h-2 w-2 rounded-full', connected ? 'bg-brand-red' : 'bg-zinc-300')} />
+              {connected ? 'Tempo real ativo' : 'Tempo real desconectado'}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={originFilter === 'ALL' ? 'default' : 'outline'}
+              size="sm"
+              className={originFilter === 'ALL' ? 'bg-brand-red hover:bg-brand-red/90' : ''}
+              onClick={() => setOriginFilter('ALL')}
             >
-              {tab.label}
-              {count > 0 && (
-                <span style={{
-                  ...styles.tabCount,
-                  background: filter === tab.value ? '#16a34a' : '#e5e7eb',
-                  color: filter === tab.value ? '#fff' : '#374151',
-                }}>
-                  {count}
-                </span>
-              )}
-            </button>
-          )
-        })}
+              Todos
+            </Button>
+            {getAllOrigins().map((origin) => {
+              const meta = ORIGIN_META[origin]
+              return (
+                <Button
+                  key={origin}
+                  variant={originFilter === origin ? 'default' : 'outline'}
+                  size="sm"
+                  title={meta.active ? meta.description : 'Em breve'}
+                  className={cn(
+                    originFilter === origin && 'bg-brand-red hover:bg-brand-red/90',
+                    !meta.active && 'opacity-50',
+                  )}
+                  onClick={() => setOriginFilter(origin)}
+                >
+                  {meta.label}
+                </Button>
+              )
+            })}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {STATUS_FILTERS.map((filter) => (
+              <Button
+                key={filter.value}
+                variant={statusFilter === filter.value ? 'default' : 'outline'}
+                size="sm"
+                className={statusFilter === filter.value ? 'bg-zinc-950 hover:bg-zinc-800' : ''}
+                onClick={() => setStatusFilter(filter.value)}
+              >
+                {filter.label}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {PERIODS.map((period) => (
+              <Button
+                key={period.value}
+                variant={periodFilter === period.value ? 'default' : 'outline'}
+                size="sm"
+                className={periodFilter === period.value ? 'bg-brand-yellow text-zinc-950 hover:bg-brand-yellow/90' : ''}
+                onClick={() => setPeriodFilter(period.value)}
+              >
+                {period.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[35%_1fr]">
+          <div className="space-y-3">
+            {loading ? (
+              <div className="rounded-lg border bg-white p-8 text-center text-sm text-zinc-500">
+                Carregando pedidos...
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="rounded-lg border bg-white p-8 text-center text-sm text-zinc-500">
+                Nenhum pedido encontrado.
+              </div>
+            ) : (
+              filteredOrders.map((order) => (
+                <OrderListItem
+                  key={order.id}
+                  order={order}
+                  selected={selectedId === order.id}
+                  highlighted={highlightedIds.has(order.id)}
+                  onClick={() => {
+                    setSelectedId(order.id)
+                    setMobileDetailOpen(true)
+                  }}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="hidden lg:block">
+            <OrderDetailPanel
+              order={selectedOrder}
+              updating={updatingId === selectedOrder?.id}
+              onStatusChange={(status) => selectedOrder && updateStatus(selectedOrder, status)}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-lg border bg-white p-4 text-sm shadow-sm md:grid-cols-3">
+          <div>
+            <p className="text-zinc-500">Total de pedidos</p>
+            <p className="mt-1 text-xl font-bold text-zinc-950">{summary.count}</p>
+          </div>
+          <div>
+            <p className="text-zinc-500">Faturamento</p>
+            <p className="mt-1 text-xl font-bold text-zinc-950">{formatCurrency(summary.revenue)}</p>
+          </div>
+          <div>
+            <p className="text-zinc-500">Ticket medio</p>
+            <p className="mt-1 text-xl font-bold text-zinc-950">{formatCurrency(summary.average)}</p>
+          </div>
+        </div>
+
+        <Link href="/dashboard/pedidos-old" className="inline-flex text-xs text-zinc-400 hover:text-brand-red">
+          ver versao antiga
+        </Link>
       </div>
 
-      {/* Orders list */}
-      {loading ? (
-        <p style={styles.empty}>Carregando pedidos...</p>
-      ) : displayed.length === 0 ? (
-        <p style={styles.empty}>Nenhum pedido encontrado.</p>
-      ) : (
-        <div style={styles.list}>
-          {displayed.map((order) => {
-            const isExpanded = expandedId === order.id
-            const isNew = newIds.has(order.id)
-            const actions = getNextActions(order)
-            const isUpdating = updatingId === order.id
+      <Sheet open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto p-4 sm:max-w-xl lg:hidden">
+          <OrderDetailPanel
+            order={selectedOrder}
+            updating={updatingId === selectedOrder?.id}
+            onStatusChange={(status) => selectedOrder && updateStatus(selectedOrder, status)}
+          />
+        </SheetContent>
+      </Sheet>
 
-            return (
-              <div
-                key={order.id}
-                style={{
-                  ...styles.card,
-                  ...(isNew ? styles.cardNew : {}),
-                  borderLeft: `4px solid ${STATUS_COLOR[order.orderStatus]}`,
-                }}
-              >
-                {/* Card header */}
-                <div style={styles.cardHeader}>
-                  <div style={styles.cardLeft}>
-                    <span style={styles.orderNumber}>#{String(order.orderNumber).padStart(3, '0')}</span>
-                    <span
-                      style={{
-                        ...styles.statusBadge,
-                        background: STATUS_COLOR[order.orderStatus] + '22',
-                        color: STATUS_COLOR[order.orderStatus],
-                      }}
-                    >
-                      {STATUS_LABEL[order.orderStatus]}
-                    </span>
-                    <span style={styles.deliveryBadge}>{DELIVERY_LABEL[order.deliveryType]}</span>
-                    {isNew && <span style={styles.newBadge}>NOVO</span>}
-                  </div>
-                  <div style={styles.cardRight}>
-                    <span style={styles.timeAgo}>{timeAgo(order.createdAt)}</span>
-                    <strong style={styles.total}>R$ {order.total.toFixed(2).replace('.', ',')}</strong>
-                  </div>
-                </div>
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Novo pedido manual</DialogTitle>
+            <DialogDescription>Registre pedidos de balcao, telefone ou atendimento interno.</DialogDescription>
+          </DialogHeader>
 
-                {/* Customer + payment row */}
-                <div style={styles.infoRow}>
-                  <span style={styles.customerName}>{order.customerName}</span>
-                  <span style={styles.infoSep}>·</span>
-                  <span style={styles.infoMeta}>{order.customerPhone}</span>
-                  <span style={styles.infoSep}>·</span>
-                  <span style={styles.infoMeta}>{PAYMENT_LABEL[order.paymentMethod]}</span>
-                  {order.couponCode && (
-                    <>
-                      <span style={styles.infoSep}>·</span>
-                      <span style={{ ...styles.infoMeta, color: '#16a34a' }}>Cupom: {order.couponCode}</span>
-                    </>
-                  )}
-                </div>
-
-                {/* Items summary (collapsed) */}
-                <div style={styles.itemsSummary}>
-                  {order.items.slice(0, isExpanded ? order.items.length : 2).map((item) => (
-                    <span key={item.id} style={styles.itemChip}>
-                      {item.quantity}× {item.productNameSnapshot}
-                    </span>
-                  ))}
-                  {!isExpanded && order.items.length > 2 && (
-                    <span style={styles.itemChipMore}>+{order.items.length - 2} mais</span>
-                  )}
-                </div>
-
-                {/* Expanded details */}
-                {isExpanded && (
-                  <div style={styles.details}>
-                    <table style={styles.table}>
-                      <tbody>
-                        {order.items.map((item) => (
-                          <tr key={item.id}>
-                            <td style={styles.tdQty}>{item.quantity}×</td>
-                            <td style={styles.tdName}>{item.productNameSnapshot}</td>
-                            <td style={styles.tdPrice}>R$ {item.itemTotal.toFixed(2).replace('.', ',')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <div style={styles.totalsBlock}>
-                      <div style={styles.totalRow}>
-                        <span>Subtotal</span>
-                        <span>R$ {order.subtotal.toFixed(2).replace('.', ',')}</span>
-                      </div>
-                      {order.deliveryFee > 0 && (
-                        <div style={styles.totalRow}>
-                          <span>Taxa de entrega</span>
-                          <span>R$ {order.deliveryFee.toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      )}
-                      {order.discountAmount > 0 && (
-                        <div style={{ ...styles.totalRow, color: '#16a34a' }}>
-                          <span>Desconto</span>
-                          <span>- R$ {order.discountAmount.toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      )}
-                      <div style={{ ...styles.totalRow, fontWeight: 'bold', fontSize: 15 }}>
-                        <span>Total</span>
-                        <span>R$ {order.total.toFixed(2).replace('.', ',')}</span>
-                      </div>
-                    </div>
-                    {order.notes && (
-                      <p style={styles.notes}>
-                        <strong>Observação:</strong> {order.notes}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Footer: expand + actions */}
-                <div style={styles.cardFooter}>
-                  <button
-                    style={styles.expandBtn}
-                    onClick={() => setExpandedId(isExpanded ? null : order.id)}
-                  >
-                    {isExpanded ? 'Menos detalhes ↑' : 'Ver detalhes ↓'}
-                  </button>
-
-                  <div style={styles.actionBtns}>
-                    {actions.map((action) => (
-                      <button
-                        key={action.status}
-                        disabled={isUpdating}
-                        onClick={() => handleUpdateStatus(order, action.status)}
-                        style={{
-                          ...styles.actionBtn,
-                          background: action.danger ? '#fee2e2' : '#dcfce7',
-                          color: action.danger ? '#ef4444' : '#166534',
-                          opacity: isUpdating ? 0.6 : 1,
-                          cursor: isUpdating ? 'not-allowed' : 'pointer',
-                        }}
-                      >
-                        {isUpdating ? '...' : action.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          <form className="space-y-4" onSubmit={createManualOrder}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Nome cliente</Label>
+                <Input value={manualName} onChange={(event) => setManualName(event.target.value)} required />
               </div>
-            )
-          })}
-        </div>
-      )}
+              <div className="space-y-1.5">
+                <Label>Telefone</Label>
+                <Input value={manualPhone} onChange={(event) => setManualPhone(event.target.value)} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tipo</Label>
+                <select
+                  value={manualDeliveryType}
+                  onChange={(event) => setManualDeliveryType(event.target.value as DeliveryType)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="DELIVERY">Entrega</option>
+                  <option value="PICKUP">Retirada</option>
+                  <option value="DINE_IN">Mesa</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Pagamento</Label>
+                <select
+                  value={manualPayment}
+                  onChange={(event) => setManualPayment(event.target.value as PaymentMethod)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="CASH">Dinheiro</option>
+                  <option value="PIX">PIX presencial</option>
+                  <option value="CREDIT_CARD">Cartao de credito</option>
+                  <option value="DEBIT_CARD">Cartao de debito</option>
+                </select>
+              </div>
+            </div>
+
+            {manualDeliveryType === 'DELIVERY' && (
+              <div className="grid gap-3 rounded-lg bg-zinc-50 p-3 md:grid-cols-2">
+                <Input placeholder="Rua" value={manualStreet} onChange={(event) => setManualStreet(event.target.value)} />
+                <Input placeholder="Numero" value={manualNumber} onChange={(event) => setManualNumber(event.target.value)} />
+                <Input placeholder="Bairro" value={manualNeighborhood} onChange={(event) => setManualNeighborhood(event.target.value)} />
+                <Input placeholder="Cidade" value={manualCity} onChange={(event) => setManualCity(event.target.value)} />
+                <Input placeholder="CEP" value={manualZipcode} onChange={(event) => setManualZipcode(event.target.value)} />
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Itens</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setManualItems((current) => [...current, INITIAL_MANUAL_ITEM])}
+                >
+                  Adicionar item
+                </Button>
+              </div>
+              {manualItems.map((item, index) => (
+                <div key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_90px_1fr_auto]">
+                  <select
+                    value={item.productId}
+                    onChange={(event) => updateManualItem(index, { productId: event.target.value })}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    required
+                  >
+                    <option value="">Produto</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.nome} - {formatCurrency(product.preco)}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={item.quantity}
+                    onChange={(event) => updateManualItem(index, { quantity: Number(event.target.value) || 1 })}
+                  />
+                  <Input
+                    placeholder="Observacao do item"
+                    value={item.itemNotes}
+                    onChange={(event) => updateManualItem(index, { itemNotes: event.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={manualItems.length === 1}
+                    onClick={() => setManualItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    Remover
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Observacoes gerais</Label>
+              <Textarea value={manualNotes} onChange={(event) => setManualNotes(event.target.value)} />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setManualOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={creatingManual} className="bg-brand-red hover:bg-brand-red/90">
+                {creatingManual ? 'Criando...' : 'Criar pedido'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  header: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  title: {
-    margin: 0,
-    fontSize: 24,
-    color: '#111827',
-  },
-  subtitle: {
-    margin: '4px 0 0',
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  wsIndicator: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '8px 14px',
-    background: '#fff',
-    borderRadius: 999,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-  },
-  wsDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-  wsLabel: {
-    fontSize: 13,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  tabs: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  },
-  tab: {
-    border: '1px solid #e5e7eb',
-    background: '#fff',
-    borderRadius: 999,
-    padding: '7px 14px',
-    fontSize: 13,
-    fontWeight: '500',
-    cursor: 'pointer',
-    color: '#374151',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tabActive: {
-    background: '#16a34a',
-    borderColor: '#16a34a',
-    color: '#fff',
-  },
-  tabCount: {
-    borderRadius: 999,
-    padding: '1px 7px',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  empty: {
-    color: '#9ca3af',
-    textAlign: 'center',
-    padding: '40px 0',
-    fontSize: 15,
-  },
-  list: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  card: {
-    background: '#fff',
-    borderRadius: 16,
-    padding: '16px 18px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-    transition: 'box-shadow 0.2s',
-  },
-  cardNew: {
-    boxShadow: '0 0 0 2px #16a34a, 0 2px 12px rgba(22,163,74,0.15)',
-  },
-  cardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  cardLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  cardRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  orderNumber: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    color: '#111827',
-  },
-  statusBadge: {
-    borderRadius: 999,
-    padding: '3px 10px',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  deliveryBadge: {
-    background: '#f3f4f6',
-    color: '#6b7280',
-    borderRadius: 999,
-    padding: '3px 10px',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  newBadge: {
-    background: '#16a34a',
-    color: '#fff',
-    borderRadius: 999,
-    padding: '3px 9px',
-    fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  timeAgo: {
-    color: '#9ca3af',
-    fontSize: 13,
-  },
-  total: {
-    fontSize: 16,
-    color: '#111827',
-  },
-  infoRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-    marginBottom: 10,
-  },
-  customerName: {
-    fontWeight: '600',
-    fontSize: 14,
-    color: '#111827',
-  },
-  infoSep: {
-    color: '#d1d5db',
-    fontSize: 14,
-  },
-  infoMeta: {
-    color: '#6b7280',
-    fontSize: 13,
-  },
-  itemsSummary: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  itemChip: {
-    background: '#f3f4f6',
-    color: '#374151',
-    borderRadius: 8,
-    padding: '3px 10px',
-    fontSize: 13,
-  },
-  itemChipMore: {
-    background: '#e5e7eb',
-    color: '#6b7280',
-    borderRadius: 8,
-    padding: '3px 10px',
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  details: {
-    borderTop: '1px solid #f3f4f6',
-    paddingTop: 12,
-    marginBottom: 12,
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginBottom: 12,
-  },
-  tdQty: {
-    width: 36,
-    color: '#6b7280',
-    fontSize: 13,
-    paddingBottom: 4,
-  },
-  tdName: {
-    color: '#111827',
-    fontSize: 14,
-    paddingBottom: 4,
-  },
-  tdPrice: {
-    textAlign: 'right',
-    color: '#111827',
-    fontSize: 14,
-    fontWeight: '500',
-    paddingBottom: 4,
-    whiteSpace: 'nowrap',
-  },
-  totalsBlock: {
-    borderTop: '1px solid #f3f4f6',
-    paddingTop: 10,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  totalRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: 14,
-    color: '#374151',
-  },
-  notes: {
-    marginTop: 10,
-    fontSize: 13,
-    color: '#6b7280',
-    background: '#f9fafb',
-    borderRadius: 8,
-    padding: '8px 12px',
-  },
-  cardFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  expandBtn: {
-    border: 0,
-    background: 'transparent',
-    color: '#6b7280',
-    fontSize: 13,
-    cursor: 'pointer',
-    padding: 0,
-    fontWeight: '500',
-  },
-  actionBtns: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  actionBtn: {
-    border: 0,
-    borderRadius: 999,
-    padding: '8px 16px',
-    fontSize: 13,
-    fontWeight: 'bold',
-    transition: 'opacity 0.15s',
-  },
 }

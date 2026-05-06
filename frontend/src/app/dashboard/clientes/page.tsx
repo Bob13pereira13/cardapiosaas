@@ -1,8 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Download, MessageCircle, Search } from 'lucide-react'
+import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
+import { PageHeader } from '@/components/admin/PageHeader'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 type PaymentMethod = 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'ONLINE_PIX' | 'ONLINE_CARD'
 type DeliveryType = 'DELIVERY' | 'PICKUP' | 'DINE_IN'
@@ -78,6 +83,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<CustomerHistory | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [search, setSearch] = useState('')
 
   const loadCustomers = useCallback(async () => {
     const token = getToken()
@@ -115,7 +121,7 @@ export default function ClientesPage() {
       })
       if (handleUnauthorized(res)) return
       if (!res.ok) {
-        alert('Erro ao carregar historico do cliente.')
+        toast.error('Erro ao carregar histórico do cliente.')
         return
       }
       const data: CustomerHistory = await res.json()
@@ -127,16 +133,63 @@ export default function ClientesPage() {
 
   const totalRevenue = customers.reduce((sum, customer) => sum + customer.totalSpent, 0)
   const totalOrders = customers.reduce((sum, customer) => sum + customer.ordersCount, 0)
+  const filteredCustomers = customers.filter((customer) => {
+    const term = search.toLowerCase()
+    return customer.name.toLowerCase().includes(term) || customer.phone.replace(/\D/g, '').includes(search.replace(/\D/g, ''))
+  })
+
+  async function exportCsv() {
+    const token = getToken()
+    if (!token) return
+    const res = await fetch(`${API_URL}/customers/export`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (handleUnauthorized(res)) return
+    if (!res.ok) {
+      toast.error('Erro ao exportar clientes.')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'clientes.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function openWhatsApp(phone: string) {
+    const clean = phone.replace(/\D/g, '')
+    if (!clean) {
+      toast.error('Cliente sem telefone válido.')
+      return
+    }
+    window.open(`https://wa.me/55${clean}`, '_blank')
+  }
 
   return (
     <div>
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Clientes</h1>
-          <p style={styles.subtitle}>
-            {customers.length} cliente{customers.length !== 1 ? 's' : ''} cadastrado
-            {customers.length !== 1 ? 's' : ''}
-          </p>
+      <Toaster richColors position="top-right" />
+      <PageHeader
+        title="Clientes"
+        description={`${customers.length} cliente${customers.length !== 1 ? 's' : ''} cadastrado${customers.length !== 1 ? 's' : ''}`}
+        actions={
+          <Button variant="outline" className="gap-2" onClick={() => void exportCsv()}>
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </Button>
+        }
+      />
+
+      <div className="mb-5 mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nome ou telefone..."
+            className="pl-9"
+          />
         </div>
       </div>
 
@@ -157,7 +210,7 @@ export default function ClientesPage() {
 
       {loading ? (
         <p style={styles.empty}>Carregando clientes...</p>
-      ) : customers.length === 0 ? (
+      ) : filteredCustomers.length === 0 ? (
         <p style={styles.empty}>Nenhum cliente encontrado.</p>
       ) : (
         <div style={styles.tableWrap}>
@@ -174,7 +227,7 @@ export default function ClientesPage() {
               </tr>
             </thead>
             <tbody>
-              {customers.map((customer) => (
+              {filteredCustomers.map((customer) => (
                 <tr key={customer.id}>
                   <td style={styles.td}>
                     <strong style={styles.name}>{customer.name}</strong>
@@ -185,14 +238,20 @@ export default function ClientesPage() {
                   <td style={styles.td}>{customer.ordersCount}</td>
                   <td style={styles.td}>{formatDate(customer.lastOrderAt)}</td>
                   <td style={styles.td}>
-                    <button
-                      type="button"
-                      onClick={() => openHistory(customer.id)}
-                      disabled={loadingHistory}
-                      style={styles.historyBtn}
-                    >
-                      Historico
-                    </button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openWhatsApp(customer.phone)} className="gap-1">
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        WhatsApp
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => openHistory(customer.id)}
+                        disabled={loadingHistory}
+                        style={styles.historyBtn}
+                      >
+                        Historico
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

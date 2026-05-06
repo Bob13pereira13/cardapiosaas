@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Param, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CustomersService } from './customers.service';
 
@@ -12,6 +12,13 @@ export class CustomersController {
   @Get()
   findAll(@Request() req: AuthenticatedRequest) {
     return this.customers.findAll(req.user.id);
+  }
+
+  @Get('export')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename=clientes.csv')
+  export(@Request() req: AuthenticatedRequest) {
+    return this.customers.exportCsv(req.user.id);
   }
 
   @Get(':id/orders')

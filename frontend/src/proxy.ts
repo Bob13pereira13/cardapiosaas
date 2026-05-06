@@ -19,9 +19,17 @@ export function proxy(request: NextRequest) {
   const isLocalhost = host === 'localhost' || host === '127.0.0.1';
   const isPlatformDomain = !host || isLocalhost || host === appHost;
   const pathname = request.nextUrl.pathname;
+  const isPlatformRoute =
+    pathname === '/login' ||
+    pathname === '/cadastro' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/dashboard');
 
   if (
     isPlatformDomain ||
+    isPlatformRoute ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/uploads') ||
@@ -36,5 +44,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api).*)'],
+  matcher: [
+    '/((?!api|admin|dashboard|login|cadastro|forgot-password|reset-password).*)',
+  ],
 };

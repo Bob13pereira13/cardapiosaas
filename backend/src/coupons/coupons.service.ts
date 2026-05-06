@@ -83,6 +83,7 @@ export class CouponsService {
         minOrderValue: dto.minOrderValue ?? null,
         maxDiscountAmount: dto.maxDiscountAmount ?? null,
         maxUses: dto.maxUses ?? null,
+        limitePorCliente: dto.limitePorCliente ?? null,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
       },
     });

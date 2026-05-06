@@ -1,3 +1,5 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-export { default } from './configuracoes-client'
+export default function Page() {
+  redirect('/dashboard/configuracoes/perfil')
+}

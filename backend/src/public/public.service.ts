@@ -106,4 +106,65 @@ export class PublicService {
       categories,
     };
   }
+
+  async getOrder(id: number) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        orderStatus: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        deliveryType: true,
+        customerName: true,
+        customerAddress: true,
+        subtotal: true,
+        deliveryFee: true,
+        discountAmount: true,
+        total: true,
+        notes: true,
+        pixQrCode: true,
+        pixCopyPaste: true,
+        createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productNameSnapshot: true,
+            quantity: true,
+            unitPrice: true,
+            itemTotal: true,
+            itemNotes: true,
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Pedido não encontrado.');
+    return order;
+  }
+
+  async getOrderStatus(id: number) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        orderStatus: true,
+        paymentStatus: true,
+        total: true,
+        deliveryType: true,
+        createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productNameSnapshot: true,
+            quantity: true,
+            itemTotal: true,
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Pedido não encontrado.');
+    return order;
+  }
 }

@@ -61,4 +61,25 @@ export class CustomersService {
       totalSpent: orders.reduce((sum, order) => sum + order.total, 0),
     };
   }
+
+  async exportCsv(userId: number) {
+    const customers = await this.findAll(userId);
+    const lines = [
+      ['Nome', 'Telefone', 'Documento', 'Pedidos', 'Total gasto', 'Ultimo pedido'],
+      ...customers.map((customer) => [
+        customer.name,
+        customer.phone,
+        customer.document ?? '',
+        String(customer.ordersCount),
+        String(customer.totalSpent),
+        customer.lastOrderAt ? new Date(customer.lastOrderAt).toISOString() : '',
+      ]),
+    ];
+
+    return lines
+      .map((line) =>
+        line.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','),
+      )
+      .join('\n');
+  }
 }

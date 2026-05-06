@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateCategoryDto {
   @IsOptional()
@@ -6,4 +6,7 @@ export class UpdateCategoryDto {
   @MinLength(1)
   @MaxLength(50)
   nome?: string;
+
+  @IsOptional() @IsBoolean() ativa?: boolean;
+  @IsOptional() @IsString() @MaxLength(50) icone?: string;
 }

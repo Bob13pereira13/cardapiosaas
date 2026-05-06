@@ -38,6 +38,11 @@ export class CreateCouponDto {
   maxUses?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  limitePorCliente?: number;
+
+  @IsOptional()
   @IsDateString()
   validUntil?: string;
 }

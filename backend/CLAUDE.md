@@ -89,3 +89,10 @@ Links úteis:
 - The JWT secret must be set via `JWT_SECRET` env variable before production.
 - Upload URLs use `API_URL` env variable; fallback is `http://localhost:3000` in dev.
 - `prisma migrate deploy` applies pending migrations in production (never `db push` in prod).
+
+## Pedidos — Origens
+
+- WEBSITE: cardapio publico proprio (ATIVO)
+- MANUAL: dono lanca no painel (ATIVO)
+- WHATSAPP_BOT: chatbot (placeholder, integracao futura)
+- IFOOD, RAPPI_99, UBER_EATS: schema preparado, aguarda parcerias

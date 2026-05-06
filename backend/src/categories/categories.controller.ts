@@ -36,6 +36,15 @@ export class CategoriesController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Patch('reorder')
+  reorder(
+    @Request() req: AuthenticatedRequest,
+    @Body() body: { ids: number[] },
+  ) {
+    return this.categoriesService.reorder(req.user.id, body.ids);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id')
   update(
     @Param('id') id: string,

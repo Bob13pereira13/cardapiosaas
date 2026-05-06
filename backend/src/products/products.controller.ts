@@ -42,6 +42,21 @@ export class ProductsController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Patch('reorder')
+  reorder(
+    @Request() req: AuthenticatedRequest,
+    @Body() body: { ids: number[] },
+  ) {
+    return this.productsService.reorder(req.user.id, body.ids);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    return this.productsService.duplicate(Number(id), req.user.id);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id')
   update(
     @Param('id') id: string,

@@ -8,6 +8,7 @@ import {
 import {
   DeliveryType,
   OptionPriceMode,
+  OrderOrigin,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -19,6 +20,7 @@ import { CouponsService } from '../coupons/coupons.service';
 import { OrdersGateway } from './orders.gateway';
 import { AsaasPaymentService } from './asaas-payment.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 
 type AsaasOrderWebhookPayload = {
@@ -49,6 +51,22 @@ function isPrismaUniqueError(error: unknown): error is { code: 'P2002' } {
     'code' in error &&
     error.code === 'P2002'
   );
+}
+
+function getFinancialRange(period: 'TODAY' | 'WEEK' | 'MONTH', dateFrom?: string, dateTo?: string) {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  if (period === 'WEEK') start.setDate(start.getDate() - 6);
+  if (period === 'MONTH') start.setDate(start.getDate() - 29);
+  if (dateFrom) {
+    const customStart = new Date(dateFrom);
+    customStart.setHours(0, 0, 0, 0);
+    start.setTime(customStart.getTime());
+  }
+  const end = dateTo ? new Date(dateTo) : new Date(now);
+  if (dateTo) end.setHours(23, 59, 59, 999);
+  return { gte: start, lte: end };
 }
 
 @Injectable()
@@ -403,6 +421,8 @@ export class OrdersService {
   findAll(userId: number, query: ListOrdersQueryDto) {
     const where: Prisma.OrderWhereInput = { userId };
     if (query.status) where.orderStatus = query.status;
+    const origins = query.origin?.length ? query.origin : query.origins;
+    if (origins?.length) where.origin = { in: origins };
     if (query.dateFrom || query.dateTo) {
       where.createdAt = {};
       if (query.dateFrom)
@@ -421,7 +441,145 @@ export class OrdersService {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
-      include: { items: true },
+      include: {
+        items: true,
+        history: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+  }
+
+  async createManualOrder(userId: number, dto: CreateManualOrderDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId },
+      select: { id: true, taxaEntrega: true },
+    });
+    if (!user) throw new NotFoundException('Restaurante não encontrado.');
+
+    if (dto.deliveryType === DeliveryType.DELIVERY && !dto.customerAddress) {
+      throw new BadRequestException('Endereço é obrigatório para entrega.');
+    }
+
+    const productIds = [...new Set(dto.items.map((i) => i.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds }, userId, disponivel: true },
+      include: { optionGroups: { include: { options: true } } },
+    });
+    if (products.length !== productIds.length) {
+      throw new BadRequestException(
+        'Um ou mais produtos não encontrados ou indisponíveis.',
+      );
+    }
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    let subtotal = 0;
+    const itemsData = dto.items.map((item) => {
+      const product = productMap.get(item.productId)!;
+      const unitPrice = product.preco;
+      const itemTotal = unitPrice * item.quantity;
+      subtotal += itemTotal;
+      return {
+        productId: item.productId,
+        productNameSnapshot: product.nome,
+        productPriceSnapshot: product.preco,
+        quantity: item.quantity,
+        unitPrice,
+        selectedOptions: Prisma.JsonNull,
+        itemNotes: item.itemNotes,
+        itemTotal,
+      };
+    });
+
+    const deliveryFee =
+      dto.deliveryType === DeliveryType.DELIVERY ? user.taxaEntrega : 0;
+    const total = subtotal + deliveryFee;
+    const customerPhone = dto.customerPhone.replace(/[^\d+]/g, '');
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const order = await this.prisma.$transaction(async (tx) => {
+          const last = await tx.order.findFirst({
+            where: { userId },
+            orderBy: { orderNumber: 'desc' },
+            select: { orderNumber: true },
+          });
+          const orderNumber = (last?.orderNumber ?? 0) + 1;
+
+          const customer = await tx.customer.upsert({
+            where: { userId_phone: { userId, phone: customerPhone } },
+            create: {
+              userId,
+              name: dto.customerName,
+              phone: customerPhone,
+              lastOrderAt: new Date(),
+            },
+            update: { name: dto.customerName, lastOrderAt: new Date() },
+            select: { id: true },
+          });
+
+          return tx.order.create({
+            data: {
+              userId,
+              customerId: customer.id,
+              orderNumber,
+              customerName: dto.customerName,
+              customerPhone,
+              customerAddress:
+                (dto.customerAddress as unknown as Prisma.InputJsonObject) ??
+                Prisma.DbNull,
+              deliveryType: dto.deliveryType,
+              deliveryFee,
+              subtotal,
+              discountAmount: 0,
+              total,
+              paymentMethod: dto.paymentMethod,
+              origin: OrderOrigin.MANUAL,
+              notes: dto.notes,
+              orderStatus: OrderStatus.CONFIRMED,
+              items: { create: itemsData },
+              history: { create: { toStatus: OrderStatus.CONFIRMED } },
+            },
+            include: { items: true },
+          });
+        });
+
+        this.gateway.emitNewOrder(userId, order);
+        return order;
+      } catch (error: unknown) {
+        if (isPrismaUniqueError(error) && attempt < 2) continue;
+        throw error;
+      }
+    }
+
+    throw new BadRequestException(
+      'Não foi possível criar o pedido. Tente novamente.',
+    );
+  }
+
+  async createFromBot(
+    userId: number,
+    dto: CreateOrderDto,
+    externalOrderId: string,
+    externalChannel?: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { slug: true },
+    });
+    if (!user?.slug)
+      throw new NotFoundException('Restaurante nÃ£o encontrado.');
+
+    const order = await this.create(user.slug, dto);
+    return this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        origin: OrderOrigin.WHATSAPP_BOT,
+        externalOrderId,
+        externalChannel,
+      },
+      include: {
+        items: true,
+        history: { orderBy: { createdAt: 'asc' } },
+      },
     });
   }
 
@@ -480,5 +638,47 @@ export class OrdersService {
 
     this.gateway.emitStatusChanged(userId, id, newStatus);
     return updated;
+  }
+
+  async financialSummary(
+    userId: number,
+    params: { period: 'TODAY' | 'WEEK' | 'MONTH'; dateFrom?: string; dateTo?: string },
+  ) {
+    const createdAt = getFinancialRange(params.period, params.dateFrom, params.dateTo);
+    const payments = await this.prisma.order.findMany({
+      where: { userId, createdAt },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        paymentMethod: true,
+        paymentStatus: true,
+        total: true,
+        createdAt: true,
+      },
+    });
+
+    const totalBruto = payments.reduce((sum, payment) => sum + payment.total, 0);
+    const totalPendente = payments
+      .filter((payment) => payment.paymentStatus === PaymentStatus.PENDING)
+      .reduce((sum, payment) => sum + payment.total, 0);
+    const totalTaxas = totalBruto * 0.0299;
+
+    return {
+      totalBruto,
+      totalTaxas,
+      totalLiquido: Math.max(0, totalBruto - totalTaxas),
+      totalPendente,
+      payments: payments.map((payment) => ({
+        orderId: payment.id,
+        orderNumber: payment.orderNumber,
+        customerName: payment.customerName,
+        paymentMethod: payment.paymentMethod,
+        paymentStatus: payment.paymentStatus,
+        total: payment.total,
+        createdAt: payment.createdAt,
+      })),
+    };
   }
 }

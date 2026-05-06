@@ -51,6 +51,16 @@ enum OptionPriceMode {
   HIGHEST
 }
 
+enum OrderOrigin {
+  WEBSITE
+  MANUAL
+  WHATSAPP_BOT
+  IFOOD
+  RAPPI_99
+  UBER_EATS
+  OTHER
+}
+
 enum UserRole {
   ADMIN
   RESTAURANT
@@ -80,6 +90,45 @@ model User {
   horarioFechamento String?
   corPrimaria       String?    @default("#16a34a")
   taxaEntrega       Float      @default(0)
+
+  // Entrega
+  aceitaEntrega              Boolean  @default(true)
+  aceitaRetirada             Boolean  @default(true)
+  aceitaMesa                 Boolean  @default(false)
+  tempoEstimadoEntrega       String?
+  pedidoMinimoEntregaGratis  Float?
+  raioEntregaKm              Float?
+
+  // Pagamentos presenciais
+  aceitaDinheiro             Boolean  @default(true)
+  aceitaPixPresencial        Boolean  @default(true)
+  aceitaCartaoCredito        Boolean  @default(true)
+  aceitaCartaoDebito         Boolean  @default(true)
+  chavePix                   String?
+
+  // Horários por dia
+  businessHours              Json?
+
+  // Aparência do cardápio
+  textoBoasVindas            String?
+  textoRodape                String?
+  mostrarPrecos              Boolean  @default(true)
+  mensagemFechado            String?
+  pausaAtiva                 Boolean  @default(false)
+  pausaAbertura              String?
+  pausaFechamento            String?
+  bairrosAtendidos           Json?
+  mensagemEntrega            String?
+  wppMsgPedido               String?
+  wppMsgConfirmado           String?
+  wppMsgPronto               String?
+  wppMsgSaiu                 String?
+  wppEnvioAutomatico         Boolean  @default(false)
+  nomePlataforma             String?
+  emailSuporte               String?
+  whatsappSuporte            String?
+  urlPublica                 String?
+
   role              UserRole   @default(RESTAURANT)
   isActive          Boolean    @default(true)
   plan              String     @default("FREE")
@@ -109,6 +158,8 @@ model Category {
   id           Int       @id @default(autoincrement())
   nome         String
   displayOrder Int       @default(0)
+  ativa        Boolean   @default(true)
+  icone        String?
 
   userId       Int
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -124,6 +175,12 @@ model Product {
   imagem       String?
   disponivel   Boolean   @default(true)
   displayOrder Int       @default(0)
+  precoPromocional Float?
+  tempoPreparo Int?
+  sku          String?
+  emDestaque   Boolean   @default(false)
+  estoqueAtivo Boolean   @default(false)
+  estoque      Int       @default(0)
 
   userId       Int
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -191,6 +248,10 @@ model Order {
   pixCopyPaste      String?
   paidAt            DateTime?
 
+  origin            OrderOrigin   @default(WEBSITE)
+  externalOrderId   String?
+  externalChannel   String?
+
   items             OrderItem[]
   history           OrderStatusHistory[]
 
@@ -204,6 +265,7 @@ model Order {
   @@index([userId, orderStatus])
   @@index([userId, createdAt])
   @@index([customerId])
+  @@index([userId, origin])
 }
 
 model Customer {
@@ -259,6 +321,7 @@ model Coupon {
   maxDiscountAmount Float?
   maxUses           Int?
   usedCount         Int        @default(0)
+  limitePorCliente  Int?
   validFrom         DateTime   @default(now())
   validUntil        DateTime?
   active            Boolean    @default(true)

@@ -39,3 +39,7 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# SSH keys
+codex_vps_key
+**/codex_vps_key

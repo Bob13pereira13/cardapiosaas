@@ -13,6 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 
@@ -47,6 +48,26 @@ export class OrdersController {
     @Body() body: unknown,
   ) {
     return this.orders.handlePaymentWebhook(token, body);
+  }
+
+  @Get('financial/summary')
+  @UseGuards(AuthGuard('jwt'))
+  financialSummary(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period: 'TODAY' | 'WEEK' | 'MONTH' = 'TODAY',
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.orders.financialSummary(req.user.id, { period, dateFrom, dateTo });
+  }
+
+  @Post('orders/manual')
+  @UseGuards(AuthGuard('jwt'))
+  createManual(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: CreateManualOrderDto,
+  ) {
+    return this.orders.createManualOrder(req.user.id, dto);
   }
 
   @Get('orders')

@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { SubscriptionStatus, UserRole } from '@prisma/client';
+import { Prisma, SubscriptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateMeDto } from './dto/update-me.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -101,6 +102,36 @@ export class UsersService {
         customDomain: true,
         customDomainVerified: true,
         customDomainStatus: true,
+        aceitaEntrega: true,
+        aceitaRetirada: true,
+        aceitaMesa: true,
+        tempoEstimadoEntrega: true,
+        pedidoMinimoEntregaGratis: true,
+        raioEntregaKm: true,
+        aceitaDinheiro: true,
+        aceitaPixPresencial: true,
+        aceitaCartaoCredito: true,
+        aceitaCartaoDebito: true,
+        chavePix: true,
+        businessHours: true,
+        textoBoasVindas: true,
+        textoRodape: true,
+        mostrarPrecos: true,
+        mensagemFechado: true,
+        pausaAtiva: true,
+        pausaAbertura: true,
+        pausaFechamento: true,
+        bairrosAtendidos: true,
+        mensagemEntrega: true,
+        wppMsgPedido: true,
+        wppMsgConfirmado: true,
+        wppMsgPronto: true,
+        wppMsgSaiu: true,
+        wppEnvioAutomatico: true,
+        nomePlataforma: true,
+        emailSuporte: true,
+        whatsappSuporte: true,
+        urlPublica: true,
       },
     });
 
@@ -137,26 +168,7 @@ export class UsersService {
     });
   }
 
-  async updateMe(
-    userId: number,
-    data: {
-      nome?: string;
-      whatsapp?: string;
-      slug?: string;
-      logo?: string;
-      banner?: string;
-      aberto?: boolean;
-      horarioAbertura?: string;
-      horarioFechamento?: string;
-      corPrimaria?: string;
-      taxaEntrega?: number;
-      gtmId?: string;
-      ga4MeasurementId?: string;
-      metaPixelId?: string;
-      metaAccessToken?: string;
-      customDomain?: string;
-    },
-  ) {
+  async updateMe(userId: number, data: UpdateMeDto) {
     let slugFormatado: string | undefined;
 
     if (data.slug !== undefined || data.nome !== undefined) {
@@ -234,6 +246,36 @@ export class UsersService {
               : !customDomain
                 ? null
                 : undefined,
+        aceitaEntrega:             data.aceitaEntrega,
+        aceitaRetirada:            data.aceitaRetirada,
+        aceitaMesa:                data.aceitaMesa,
+        tempoEstimadoEntrega:      data.tempoEstimadoEntrega,
+        pedidoMinimoEntregaGratis: data.pedidoMinimoEntregaGratis,
+        raioEntregaKm:             data.raioEntregaKm,
+        aceitaDinheiro:            data.aceitaDinheiro,
+        aceitaPixPresencial:       data.aceitaPixPresencial,
+        aceitaCartaoCredito:       data.aceitaCartaoCredito,
+        aceitaCartaoDebito:        data.aceitaCartaoDebito,
+        chavePix:                  data.chavePix,
+        businessHours:             data.businessHours ?? undefined,
+        textoBoasVindas:           data.textoBoasVindas,
+        textoRodape:               data.textoRodape,
+        mostrarPrecos:             data.mostrarPrecos,
+        mensagemFechado:           data.mensagemFechado,
+        pausaAtiva:                data.pausaAtiva,
+        pausaAbertura:             data.pausaAbertura,
+        pausaFechamento:           data.pausaFechamento,
+        bairrosAtendidos:          data.bairrosAtendidos === undefined ? undefined : data.bairrosAtendidos === null ? Prisma.JsonNull : data.bairrosAtendidos,
+        mensagemEntrega:           data.mensagemEntrega,
+        wppMsgPedido:              data.wppMsgPedido,
+        wppMsgConfirmado:          data.wppMsgConfirmado,
+        wppMsgPronto:              data.wppMsgPronto,
+        wppMsgSaiu:                data.wppMsgSaiu,
+        wppEnvioAutomatico:        data.wppEnvioAutomatico,
+        nomePlataforma:            data.nomePlataforma,
+        emailSuporte:              data.emailSuporte,
+        whatsappSuporte:           data.whatsappSuporte,
+        urlPublica:                data.urlPublica,
       },
       select: {
         id: true,
@@ -260,8 +302,47 @@ export class UsersService {
         customDomain: true,
         customDomainVerified: true,
         customDomainStatus: true,
+        aceitaEntrega: true,
+        aceitaRetirada: true,
+        aceitaMesa: true,
+        tempoEstimadoEntrega: true,
+        pedidoMinimoEntregaGratis: true,
+        raioEntregaKm: true,
+        aceitaDinheiro: true,
+        aceitaPixPresencial: true,
+        aceitaCartaoCredito: true,
+        aceitaCartaoDebito: true,
+        chavePix: true,
+        businessHours: true,
+        textoBoasVindas: true,
+        textoRodape: true,
+        mostrarPrecos: true,
+        mensagemFechado: true,
+        pausaAtiva: true,
+        pausaAbertura: true,
+        pausaFechamento: true,
+        bairrosAtendidos: true,
+        mensagemEntrega: true,
+        wppMsgPedido: true,
+        wppMsgConfirmado: true,
+        wppMsgPronto: true,
+        wppMsgSaiu: true,
+        wppEnvioAutomatico: true,
+        nomePlataforma: true,
+        emailSuporte: true,
+        whatsappSuporte: true,
+        urlPublica: true,
       },
     });
+
+    if (data.currentPassword && data.newPassword) {
+      const userRow = await this.prisma.user.findUnique({ where: { id: userId }, select: { password: true } });
+      if (!userRow) throw new BadRequestException('Usuário não encontrado.');
+      const valid = await bcrypt.compare(data.currentPassword, userRow.password);
+      if (!valid) throw new BadRequestException('Senha atual incorreta.');
+      const hashed = await bcrypt.hash(data.newPassword, 10);
+      await this.prisma.user.update({ where: { id: userId }, data: { password: hashed } });
+    }
 
     return this.hideTrackingToken(updatedUser);
   }

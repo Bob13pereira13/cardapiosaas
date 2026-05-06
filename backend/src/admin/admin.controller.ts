@@ -42,6 +42,31 @@ export class AdminController {
     return this.adminService.findClients();
   }
 
+  @Get('metrics')
+  metrics() {
+    return this.adminService.metrics();
+  }
+
+  @Get('payments')
+  payments() {
+    return this.adminService.payments();
+  }
+
+  @Get('subscriptions')
+  subscriptions() {
+    return this.adminService.subscriptions();
+  }
+
+  @Get('logs')
+  logs() {
+    return this.adminService.logs();
+  }
+
+  @Get('test-asaas')
+  testAsaas() {
+    return this.adminService.testAsaas();
+  }
+
   @Get('clientes/:id')
   findClient(@Param('id') id: string) {
     return this.adminService.findClient(Number(id));

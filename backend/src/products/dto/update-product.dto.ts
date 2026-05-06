@@ -26,6 +26,13 @@ export class UpdateProductDto {
   @Min(0, { message: 'Preço não pode ser negativo.' })
   preco?: number;
 
+  @IsOptional() @IsNumber() @Min(0) precoPromocional?: number;
+  @IsOptional() @IsInt() @Min(0) tempoPreparo?: number;
+  @IsOptional() @IsString() @MaxLength(80) sku?: string;
+  @IsOptional() @IsBoolean() emDestaque?: boolean;
+  @IsOptional() @IsBoolean() estoqueAtivo?: boolean;
+  @IsOptional() @IsInt() @Min(0) estoque?: number;
+
   @IsOptional()
   @IsString()
   imagem?: string;

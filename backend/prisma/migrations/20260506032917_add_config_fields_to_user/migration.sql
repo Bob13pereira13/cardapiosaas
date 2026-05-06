@@ -1,0 +1,16 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "aceitaCartaoCredito" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "aceitaCartaoDebito" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "aceitaDinheiro" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "aceitaEntrega" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "aceitaMesa" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "aceitaPixPresencial" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "aceitaRetirada" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "businessHours" JSONB,
+ADD COLUMN     "chavePix" TEXT,
+ADD COLUMN     "mostrarPrecos" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "pedidoMinimoEntregaGratis" DOUBLE PRECISION,
+ADD COLUMN     "raioEntregaKm" DOUBLE PRECISION,
+ADD COLUMN     "tempoEstimadoEntrega" TEXT,
+ADD COLUMN     "textoBoasVindas" TEXT,
+ADD COLUMN     "textoRodape" TEXT;

@@ -16,6 +16,7 @@ import { AdminModule } from './admin/admin.module';
 import { BillingModule } from './billing/billing.module';
 import { CustomersModule } from './customers/customers.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { TrackingModule } from './tracking/tracking.module';
     BillingModule,
     CustomersModule,
     TrackingModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
