@@ -1,6 +1,6 @@
 http:
   routers:
-    frontend:
+    frontend-https:
       rule: "Host(`cardapiopedeai.com.br`) || Host(`www.cardapiopedeai.com.br`)"
       entryPoints:
         - websecure
@@ -8,7 +8,13 @@ http:
         certResolver: letsencrypt
       service: frontend
 
-    backend:
+    frontend-http:
+      rule: "Host(`cardapiopedeai.com.br`) || Host(`www.cardapiopedeai.com.br`)"
+      entryPoints:
+        - web
+      service: frontend
+
+    backend-https:
       rule: "Host(`api.cardapiopedeai.com.br`)"
       entryPoints:
         - websecure
@@ -16,12 +22,26 @@ http:
         certResolver: letsencrypt
       service: backend
 
-    backend-path:
+    backend-http:
+      rule: "Host(`api.cardapiopedeai.com.br`)"
+      entryPoints:
+        - web
+      service: backend
+
+    backend-path-https:
       rule: "Host(`cardapiopedeai.com.br`) && PathPrefix(`/api`)"
       entryPoints:
         - websecure
       tls:
         certResolver: letsencrypt
+      middlewares:
+        - strip-api
+      service: backend
+
+    backend-path-http:
+      rule: "Host(`cardapiopedeai.com.br`) && PathPrefix(`/api`)"
+      entryPoints:
+        - web
       middlewares:
         - strip-api
       service: backend
