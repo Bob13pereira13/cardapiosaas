@@ -40,19 +40,6 @@ services:
     depends_on:
       database:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend-api.rule=Host(`${API_DOMAIN:-api.localhost}`)"
-      - "traefik.http.routers.backend-api.entrypoints=websecure"
-      - "traefik.http.routers.backend-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.backend-api.service=backend"
-      - "traefik.http.routers.backend-path.rule=Host(`${APP_DOMAIN:-localhost}`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.backend-path.entrypoints=websecure"
-      - "traefik.http.routers.backend-path.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.backend-path.middlewares=strip-api"
-      - "traefik.http.routers.backend-path.service=backend"
-      - "traefik.http.middlewares.strip-api.stripprefix.prefixes=/api"
-      - "traefik.http.services.backend.loadbalancer.server.port=3000"
 
   frontend:
     build:
@@ -64,26 +51,12 @@ services:
       - "3001:3000"
     depends_on:
       - backend
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${APP_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.frontend.service=frontend"
-      - "traefik.http.routers.custom-domains.rule=HostRegexp(`{host:.+}`)"
-      - "traefik.http.routers.custom-domains.entrypoints=websecure"
-      - "traefik.http.routers.custom-domains.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.custom-domains.priority=1"
-      - "traefik.http.routers.custom-domains.service=frontend"
-      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
 
   proxy:
     image: traefik:v3.3
-    environment:
-      - DOCKER_API_VERSION=1.41
     command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--providers.file.watch=true"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
@@ -96,8 +69,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/acme:/letsencrypt
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
     depends_on:
       - frontend
       - backend

@@ -1,0 +1,44 @@
+http:
+  routers:
+    frontend:
+      rule: "Host(`cardapiopedeai.com.br`) || Host(`www.cardapiopedeai.com.br`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: frontend
+
+    backend:
+      rule: "Host(`api.cardapiopedeai.com.br`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: backend
+
+    backend-path:
+      rule: "Host(`cardapiopedeai.com.br`) && PathPrefix(`/api`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - strip-api
+      service: backend
+
+  middlewares:
+    strip-api:
+      stripPrefix:
+        prefixes:
+          - /api
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:3000"
