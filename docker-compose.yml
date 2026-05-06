@@ -78,7 +78,9 @@ services:
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
 
   proxy:
-    image: traefik:v3.0
+    image: traefik:v3.3
+    environment:
+      - DOCKER_API_VERSION=1.41
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
