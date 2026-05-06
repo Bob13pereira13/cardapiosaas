@@ -38,6 +38,9 @@ type Category = {
   products: Product[];
 };
 
+type ComboItem = { quantidade: number; product: { id: number; nome: string; preco: number; imagem?: string | null } };
+type Combo = { id: number; nome: string; descricao?: string | null; preco: number; imagemUrl?: string | null; items: ComboItem[] };
+
 type Cardapio = {
   nome: string;
   whatsapp: string | null;
@@ -55,6 +58,7 @@ type Cardapio = {
   customDomainVerified?: boolean;
   customDomainStatus?: string | null;
   categories: Category[];
+  combos?: Combo[];
 };
 
 type CartItem = Product & {
@@ -896,6 +900,39 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
           ))
         )}
       </div>
+
+      {/* ── COMBOS ── */}
+      {(cardapio.combos ?? []).length > 0 && (
+        <div className="max-w-3xl mx-auto px-4 pt-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="w-1 h-5 rounded-full inline-block shrink-0" style={{ backgroundColor: cor }} />
+            Combos
+          </h2>
+          <div className="flex flex-col gap-3">
+            {(cardapio.combos ?? []).map((combo) => (
+              <article key={combo.id} className="bg-white rounded-2xl p-4 flex gap-4 border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                {combo.imagemUrl && (
+                  <div className="w-24 h-24 shrink-0 rounded-xl overflow-hidden bg-gray-100">
+                    <img src={combo.imagemUrl} alt={combo.nome} className="w-full h-full object-cover" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-[15px]">{combo.nome}</h3>
+                    {combo.descricao && <p className="text-gray-500 text-sm mt-1 line-clamp-2">{combo.descricao}</p>}
+                    {combo.items.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">{combo.items.map((i) => `${i.quantidade}x ${i.product.nome}`).join(' + ')}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-base font-bold" style={{ color: cor }}>{formatarPreco(combo.preco)}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── FLOATING CART BUTTON ── */}
       {optionProduct && (

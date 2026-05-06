@@ -96,6 +96,28 @@ export class CustomersService {
     return customer;
   }
 
+  async findInactive(userId: number, daysSince: number) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - daysSince);
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        userId,
+        OR: [
+          { lastOrderAt: { lt: cutoff } },
+          { lastOrderAt: null, createdAt: { lt: cutoff } },
+        ],
+      },
+      orderBy: { lastOrderAt: 'asc' },
+    });
+    return customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      lastOrderAt: c.lastOrderAt,
+      createdAt: c.createdAt,
+    }));
+  }
+
   async exportCsv(userId: number) {
     const customers = await this.findAll(userId);
     const lines = [

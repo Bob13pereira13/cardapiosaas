@@ -93,6 +93,24 @@ export class PublicService {
 
     const categories = allCategories.filter((c) => c.products.length > 0);
 
+    const combos = await this.prisma.combo.findMany({
+      where: { userId: user.id, ativo: true },
+      orderBy: { nome: 'asc' },
+      select: {
+        id: true,
+        nome: true,
+        descricao: true,
+        preco: true,
+        imagem: true,
+        items: {
+          select: {
+            quantidade: true,
+            product: { select: { id: true, nome: true, preco: true, imagem: true } },
+          },
+        },
+      },
+    });
+
     return {
       nome: user.nome,
       whatsapp: user.whatsapp,
@@ -110,6 +128,7 @@ export class PublicService {
       customDomainVerified: user.customDomainVerified,
       customDomainStatus: user.customDomainStatus,
       categories,
+      combos,
     };
   }
 

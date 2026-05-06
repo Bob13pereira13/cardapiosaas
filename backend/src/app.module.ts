@@ -24,6 +24,11 @@ import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { NpsModule } from './nps/nps.module';
+import { TablesModule } from './tables/tables.module';
+import { AgendaModule } from './agenda/agenda.module';
+import { CombosModule } from './combos/combos.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -49,6 +54,11 @@ import { NpsModule } from './nps/nps.module';
     SchedulerModule,
     IntegrationsModule,
     NpsModule,
+    TablesModule,
+    AgendaModule,
+    CombosModule,
+    CampaignsModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

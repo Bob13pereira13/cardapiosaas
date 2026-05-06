@@ -51,6 +51,38 @@ enum OptionPriceMode {
   HIGHEST
 }
 
+enum ComandaStatus {
+  ABERTA
+  FECHADA
+  CANCELADA
+}
+
+enum AgendamentoTipo {
+  PEDIDO
+  RESERVA
+  ENCOMENDA
+}
+
+enum AgendamentoStatus {
+  PENDENTE
+  CONFIRMADO
+  CANCELADO
+  CONCLUIDO
+}
+
+enum CampaignTipo {
+  CUPOM
+  LINK
+  RETORNO
+}
+
+enum CampaignStatus {
+  RASCUNHO
+  ATIVA
+  PAUSADA
+  ENCERRADA
+}
+
 enum OrderOrigin {
   WEBSITE
   MANUAL
@@ -152,6 +184,11 @@ model User {
   orders            Order[]
   coupons           Coupon[]
   customers         Customer[]
+  tables            Table[]
+  agendamentos      Agendamento[]
+  combos            Combo[]
+  campaigns         Campaign[]
+  auditLogs         AuditLog[]
 
   loyaltyEnabled      Boolean  @default(false)
   loyaltyPointsPerBrl Float    @default(1)
@@ -190,6 +227,11 @@ model Product {
   estoqueAtivo Boolean   @default(false)
   estoque      Int       @default(0)
 
+  disponibilidadeAtiva Boolean @default(false)
+  disponibilidadeInicio String?
+  disponibilidadeFim    String?
+  disponibilidadeDias   Int[]   @default([0,1,2,3,4,5,6])
+
   userId       Int
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -198,6 +240,8 @@ model Product {
 
   optionGroups OptionGroup[]
   orderItems   OrderItem[]
+  comboItems   ComboItem[]
+  comandaItems ComandaItem[]
 }
 
 model OptionGroup {
@@ -287,11 +331,13 @@ model Customer {
   name        String
   phone       String
   document    String?
+  tags        String[]  @default([])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   lastOrderAt DateTime?
 
-  orders      Order[]
+  orders       Order[]
+  agendamentos Agendamento[]
 
   auth           CustomerAuth?
   loyaltyPoints  LoyaltyPoints[]
@@ -343,6 +389,7 @@ model Coupon {
   validUntil        DateTime?
   active            Boolean    @default(true)
   orders            Order[]
+  campaigns         Campaign[]
   createdAt         DateTime   @default(now())
 
   @@unique([userId, code])
@@ -406,4 +453,109 @@ model CartAbandonment {
   notified   Boolean   @default(false)
   notifiedAt DateTime?
   createdAt  DateTime  @default(now())
+}
+
+model Table {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  numero     Int
+  nome       String?
+  capacidade Int       @default(4)
+  ativa      Boolean   @default(true)
+  qrCode     String?
+  comandas   Comanda[]
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, numero])
+}
+
+model Comanda {
+  id        Int           @id @default(autoincrement())
+  tableId   Int
+  table     Table         @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  userId    Int
+  status    ComandaStatus @default(ABERTA)
+  total     Float         @default(0)
+  items     ComandaItem[]
+  createdAt DateTime      @default(now())
+  closedAt  DateTime?
+}
+
+model ComandaItem {
+  id         Int     @id @default(autoincrement())
+  comandaId  Int
+  comanda    Comanda @relation(fields: [comandaId], references: [id], onDelete: Cascade)
+  productId  Int
+  product    Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantidade Int
+  preco      Float
+  obs        String?
+}
+
+model Agendamento {
+  id          Int               @id @default(autoincrement())
+  userId      Int
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId  Int?
+  customer    Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  tipo        AgendamentoTipo   @default(PEDIDO)
+  status      AgendamentoStatus @default(PENDENTE)
+  dataHora    DateTime
+  descricao   String?
+  total       Float?
+  obs         String?
+  createdAt   DateTime          @default(now())
+}
+
+model Combo {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nome      String
+  descricao String?
+  preco     Float
+  ativo     Boolean     @default(true)
+  imagem    String?
+  items     ComboItem[]
+  createdAt DateTime    @default(now())
+}
+
+model ComboItem {
+  id         Int     @id @default(autoincrement())
+  comboId    Int
+  combo      Combo   @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  productId  Int
+  product    Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantidade Int     @default(1)
+}
+
+model Campaign {
+  id              Int            @id @default(autoincrement())
+  userId          Int
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nome            String
+  tipo            CampaignTipo   @default(CUPOM)
+  status          CampaignStatus @default(RASCUNHO)
+  couponId        Int?
+  coupon          Coupon?        @relation(fields: [couponId], references: [id])
+  descricao       String?
+  metaClicks      Int            @default(0)
+  metaConversoes  Int            @default(0)
+  dataInicio      DateTime?
+  dataFim         DateTime?
+  createdAt       DateTime       @default(now())
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  entity    String
+  entityId  Int?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

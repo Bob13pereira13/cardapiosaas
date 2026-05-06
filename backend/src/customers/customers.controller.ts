@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Header, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Header, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CustomersService } from './customers.service';
 
@@ -12,6 +12,11 @@ export class CustomersController {
   @Get()
   findAll(@Request() req: AuthenticatedRequest) {
     return this.customers.findAll(req.user.id);
+  }
+
+  @Get('inactive')
+  findInactive(@Request() req: AuthenticatedRequest, @Query('daysSince') daysSince?: string) {
+    return this.customers.findInactive(req.user.id, daysSince ? Number(daysSince) : 30);
   }
 
   @Get('export')

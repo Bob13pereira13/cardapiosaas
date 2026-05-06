@@ -366,6 +366,13 @@ export class OrdersService {
           }
         }
 
+        if (order.couponId) {
+          this.prisma.campaign.updateMany({
+            where: { couponId: order.couponId, userId: user.id },
+            data: { metaConversoes: { increment: 1 } },
+          }).catch(() => undefined);
+        }
+
         this.gateway.emitNewOrder(user.id, order);
         return order;
       } catch (error: unknown) {
