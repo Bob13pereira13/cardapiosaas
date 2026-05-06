@@ -19,4 +19,34 @@ export class ReportsController {
   ) {
     return this.reports.summary(req.user.id, { period, dateFrom, dateTo });
   }
+
+  @Get('abc')
+  abcCurve(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period: Period = 'MONTH',
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.reports.getAbcCurve(req.user.id, { period, dateFrom, dateTo });
+  }
+
+  @Get('customer-ltv')
+  customerLtv(@Request() req: AuthenticatedRequest) {
+    return this.reports.getCustomerLtv(req.user.id);
+  }
+
+  @Get('revenue-by-hour')
+  revenueByHour(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period: Period = 'MONTH',
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.reports.getRevenueByHour(req.user.id, { period, dateFrom, dateTo });
+  }
+
+  @Get('churn-signals')
+  churnSignals(@Request() req: AuthenticatedRequest) {
+    return this.reports.getChurnSignals(req.user.id);
+  }
 }

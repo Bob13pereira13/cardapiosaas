@@ -1,206 +1,115 @@
-import Link from 'next/link'
+import Link from 'next/link';
+import { BarChart3, ClipboardList, QrCode, Store, Utensils } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-export default function HomePage() {
+const features = [
+  { title: 'Cardapio digital', text: 'Produtos, categorias, adicionais e QR code publico.', icon: QrCode },
+  { title: 'Gestao de pedidos', text: 'Painel em tempo real para acompanhar preparo e entrega.', icon: ClipboardList },
+  { title: 'Relatorios', text: 'Resumo financeiro, produtos campeoes e horarios de maior venda.', icon: BarChart3 },
+];
+
+export default function Home() {
   return (
-    <main style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.brand}>Cardápio SaaS</span>
-        <div style={styles.navLinks}>
-          <Link href="/login" style={styles.navLink}>Entrar</Link>
-          <Link href="/cadastro" style={styles.navCta}>Criar conta grátis</Link>
-        </div>
-      </nav>
+    <main className="min-h-screen bg-zinc-50 text-zinc-950">
+      <section className="border-b bg-white">
+        <div className="mx-auto flex min-h-[82vh] max-w-7xl flex-col justify-between px-4 py-6 md:px-8">
+          <nav className="flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2 font-extrabold">
+              <Utensils className="h-5 w-5 text-brand-red" />
+              cardapio.pede.ai
+            </Link>
+            <Button asChild variant="outline">
+              <Link href="/login">Entrar</Link>
+            </Button>
+          </nav>
 
-      <section style={styles.hero}>
-        <h1 style={styles.heroTitle}>
-          Cardápio digital para o seu restaurante
-        </h1>
-        <p style={styles.heroSub}>
-          Crie seu cardápio online em minutos, compartilhe o link e receba pedidos pelo WhatsApp. Sem taxa por pedido.
-        </p>
-        <div style={styles.heroCtas}>
-          <Link href="/cadastro" style={styles.ctaPrimary}>Criar meu cardápio grátis</Link>
-          <Link href="/cardapio/demo" style={styles.ctaSecondary}>Ver exemplo →</Link>
+          <div className="grid items-center gap-10 py-12 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="max-w-2xl">
+              <p className="text-sm font-bold uppercase tracking-wide text-brand-red">SaaS para restaurantes</p>
+              <h1 className="mt-4 text-4xl font-black leading-tight md:text-6xl">
+                Cardapio online, pedidos e relatorios em um painel simples.
+              </h1>
+              <p className="mt-5 max-w-xl text-lg text-zinc-600">
+                Venda por QR code, organize pedidos em tempo real e acompanhe os indicadores do restaurante sem depender de marketplace.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Button asChild size="lg" className="bg-brand-red hover:bg-brand-red/90">
+                  <Link href="/auth/register">Comecar gratis</Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link href="/precos">Ver planos</Link>
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-zinc-950 p-4 text-white shadow-xl">
+              <div className="rounded-md bg-white p-4 text-zinc-950">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div>
+                    <p className="text-xs text-zinc-500">Hoje</p>
+                    <p className="text-2xl font-black">R$ 1.842,90</p>
+                  </div>
+                  <Store className="h-8 w-8 text-brand-red" />
+                </div>
+                <div className="mt-4 space-y-3">
+                  {['Pedido #128 confirmado', 'Pizza Calabresa saiu para entrega', 'QR Code copiado'].map((item) => (
+                    <div key={item} className="rounded-md bg-zinc-100 px-3 py-3 text-sm font-medium">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section style={styles.features}>
-        <div style={styles.feature}>
-          <span style={styles.featureIcon}>📋</span>
-          <h3 style={styles.featureTitle}>Cardápio sempre atualizado</h3>
-          <p style={styles.featureText}>
-            Adicione, edite e remova produtos a qualquer momento pelo painel. Mudanças refletem instantaneamente.
-          </p>
-        </div>
+      <section className="mx-auto grid max-w-7xl gap-4 px-4 py-14 md:grid-cols-3 md:px-8">
+        {features.map((feature) => {
+          const Icon = feature.icon;
+          return (
+            <Card key={feature.title}>
+              <CardHeader>
+                <Icon className="h-6 w-6 text-brand-red" />
+                <CardTitle>{feature.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-zinc-600">{feature.text}</CardContent>
+            </Card>
+          );
+        })}
+      </section>
 
-        <div style={styles.feature}>
-          <span style={styles.featureIcon}>🛒</span>
-          <h3 style={styles.featureTitle}>Pedidos via WhatsApp</h3>
-          <p style={styles.featureText}>
-            O cliente monta o pedido pelo cardápio e finaliza direto no seu WhatsApp, sem intermediários.
-          </p>
-        </div>
-
-        <div style={styles.feature}>
-          <span style={styles.featureIcon}>🎨</span>
-          <h3 style={styles.featureTitle}>Personalização completa</h3>
-          <p style={styles.featureText}>
-            Logo, banner, cor principal, horários e URL única com o nome do seu restaurante.
-          </p>
+      <section className="border-y bg-white">
+        <div className="mx-auto grid max-w-5xl gap-4 px-4 py-14 md:grid-cols-2 md:px-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Trial gratis 7 dias</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-black">R$ 0</p>
+              <p className="mt-2 text-sm text-zinc-600">Teste todos os recursos principais sem compromisso.</p>
+            </CardContent>
+          </Card>
+          <Card className="border-brand-red">
+            <CardHeader>
+              <CardTitle>Profissional</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-black">Sob consulta</p>
+              <p className="mt-2 text-sm text-zinc-600">Operacao completa para cardapio, pedidos, clientes e relatorios.</p>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
-      <section style={styles.cta}>
-        <h2 style={styles.ctaTitle}>Pronto para começar?</h2>
-        <p style={styles.ctaText}>Crie sua conta e tenha seu cardápio no ar em menos de 5 minutos.</p>
-        <Link href="/cadastro" style={styles.ctaPrimary}>Criar conta grátis</Link>
-      </section>
-
-      <footer style={styles.footer}>
-        <p style={styles.footerText}>© 2026 Cardápio SaaS</p>
+      <footer className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-sm text-zinc-600 md:flex-row md:items-center md:justify-between md:px-8">
+        <span>cardapio.pede.ai</span>
+        <div className="flex gap-4">
+          <Link href="/privacidade">Politica de Privacidade</Link>
+          <Link href="/contato">Contato</Link>
+        </div>
       </footer>
     </main>
-  )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    fontFamily: 'Arial, sans-serif',
-    background: '#fff',
-  },
-  nav: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '18px 32px',
-    borderBottom: '1px solid #f1f5f9',
-    position: 'sticky',
-    top: 0,
-    background: '#fff',
-    zIndex: 10,
-  },
-  brand: {
-    fontWeight: 'bold',
-    fontSize: 18,
-    color: '#16a34a',
-  },
-  navLinks: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 20,
-  },
-  navLink: {
-    color: '#6b7280',
-    textDecoration: 'none',
-    fontSize: 15,
-  },
-  navCta: {
-    background: '#16a34a',
-    color: '#fff',
-    padding: '10px 20px',
-    borderRadius: 999,
-    textDecoration: 'none',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  hero: {
-    maxWidth: 720,
-    margin: '0 auto',
-    padding: '80px 24px 60px',
-    textAlign: 'center',
-  },
-  heroTitle: {
-    margin: 0,
-    fontSize: 48,
-    lineHeight: 1.15,
-    color: '#111827',
-    fontWeight: 'bold',
-  },
-  heroSub: {
-    margin: '22px auto 0',
-    maxWidth: 520,
-    color: '#6b7280',
-    fontSize: 18,
-    lineHeight: 1.6,
-  },
-  heroCtas: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 36,
-    flexWrap: 'wrap',
-  },
-  ctaPrimary: {
-    background: '#16a34a',
-    color: '#fff',
-    padding: '16px 32px',
-    borderRadius: 999,
-    textDecoration: 'none',
-    fontWeight: 'bold',
-    fontSize: 16,
-    boxShadow: '0 8px 24px rgba(22,163,74,0.3)',
-  },
-  ctaSecondary: {
-    background: '#f3f4f6',
-    color: '#374151',
-    padding: '16px 32px',
-    borderRadius: 999,
-    textDecoration: 'none',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  features: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-    gap: 28,
-    maxWidth: 1000,
-    margin: '0 auto',
-    padding: '20px 24px 80px',
-  },
-  feature: {
-    background: '#f9fafb',
-    borderRadius: 24,
-    padding: 28,
-  },
-  featureIcon: {
-    fontSize: 36,
-  },
-  featureTitle: {
-    margin: '14px 0 8px',
-    fontSize: 20,
-    color: '#111827',
-  },
-  featureText: {
-    margin: 0,
-    color: '#6b7280',
-    fontSize: 15,
-    lineHeight: 1.6,
-  },
-  cta: {
-    background: '#f0fdf4',
-    padding: '60px 24px',
-    textAlign: 'center',
-  },
-  ctaTitle: {
-    margin: 0,
-    fontSize: 32,
-    color: '#111827',
-  },
-  ctaText: {
-    margin: '14px auto 28px',
-    color: '#6b7280',
-    fontSize: 16,
-    maxWidth: 420,
-  },
-  footer: {
-    padding: '28px 24px',
-    textAlign: 'center',
-    borderTop: '1px solid #f1f5f9',
-  },
-  footerText: {
-    margin: 0,
-    color: '#9ca3af',
-    fontSize: 14,
-  },
+  );
 }

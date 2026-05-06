@@ -23,6 +23,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       .then((data) => {
         setSlug(data.slug ?? null)
         setSubscriptionStatus(data.subscriptionStatus ?? null)
+        if ((!data.slug || !data.whatsapp) && window.location.pathname !== '/dashboard/onboarding') {
+          window.location.href = '/dashboard/onboarding'
+        }
       })
       .catch(() => {})
   }, [])

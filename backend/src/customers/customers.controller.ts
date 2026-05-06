@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Header, Param, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CustomersService } from './customers.service';
 
@@ -24,5 +24,15 @@ export class CustomersController {
   @Get(':id/orders')
   findOrders(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.customers.findOrders(req.user.id, Number(id));
+  }
+
+  @Get(':id/gdpr-export')
+  gdprExport(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    return this.customers.exportGdpr(req.user.id, Number(id));
+  }
+
+  @Delete(':id/anonymize')
+  anonymize(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    return this.customers.anonymize(req.user.id, Number(id));
   }
 }

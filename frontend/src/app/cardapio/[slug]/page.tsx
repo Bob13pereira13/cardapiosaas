@@ -11,6 +11,17 @@ type Product = {
   descricao?: string | null;
   preco: number;
   imagem?: string | null;
+  optionGroups?: OptionGroup[];
+};
+
+type OptionGroup = {
+  id: number;
+  nome: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  priceMode: 'SUM' | 'MAX';
+  options: Array<{ id: number; nome: string; priceModifier: number; available: boolean }>;
 };
 
 type TrackingItem = {
@@ -46,7 +57,11 @@ type Cardapio = {
   categories: Category[];
 };
 
-type CartItem = Product & { quantidade: number };
+type CartItem = Product & {
+  quantidade: number;
+  selectedOptions?: Array<{ optionGroupId: number; optionId: number }>;
+  optionsLabel?: string;
+};
 type PaymentMethod = 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'ONLINE_PIX';
 type DeliveryType = 'DELIVERY' | 'PICKUP';
 type CheckoutStep = 1 | 2 | 3;
@@ -134,6 +149,8 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
   const [orderSuccess, setOrderSuccess] = useState<OrderSuccess | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>(1);
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
+  const [optionProduct, setOptionProduct] = useState<Product | null>(null);
+  const [optionSelections, setOptionSelections] = useState<Record<number, number[]>>({});
 
   const sectionRefs = useRef<Record<number, HTMLElement | null>>({});
   const viewedProductsRef = useRef<Set<number>>(new Set());
@@ -370,15 +387,85 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
     return () => observer.disconnect();
   }, [cardapio, buildTrackingItem, findProductCategory, trackEcommerceEvent]);
 
-  function adicionarAoCarrinho(product: Product) {
+  function abrirAdicionais(product: Product) {
+    setOptionProduct(product);
+    setOptionSelections({});
+  }
+
+  function toggleOption(group: OptionGroup, optionId: number) {
+    setOptionSelections((current) => {
+      const selected = current[group.id] ?? [];
+      const exists = selected.includes(optionId);
+      const next =
+        group.maxSelections === 1
+          ? exists
+            ? []
+            : [optionId]
+          : exists
+            ? selected.filter((id) => id !== optionId)
+            : [...selected, optionId].slice(0, group.maxSelections || undefined);
+      return { ...current, [group.id]: next };
+    });
+  }
+
+  function calcularPrecoComAdicionais(product: Product) {
+    return (product.optionGroups ?? []).reduce((price, group) => {
+      const selectedIds = optionSelections[group.id] ?? [];
+      const modifiers = group.options
+        .filter((option) => selectedIds.includes(option.id))
+        .map((option) => option.priceModifier);
+      if (modifiers.length === 0) return price;
+      return price + (group.priceMode === 'MAX' ? Math.max(...modifiers) : modifiers.reduce((sum, value) => sum + value, 0));
+    }, product.preco);
+  }
+
+  function adicionarProdutoComAdicionais() {
+    if (!optionProduct) return;
+    const invalid = (optionProduct.optionGroups ?? []).some((group) => {
+      const count = optionSelections[group.id]?.length ?? 0;
+      return group.required && count < Math.max(1, group.minSelections);
+    });
+    if (invalid) {
+      setOrderError('Selecione os adicionais obrigatorios.');
+      return;
+    }
+
+    const selectedOptions = (optionProduct.optionGroups ?? []).flatMap((group) =>
+      (optionSelections[group.id] ?? []).map((optionId) => ({ optionGroupId: group.id, optionId })),
+    );
+    const selectedNames = (optionProduct.optionGroups ?? []).flatMap((group) =>
+      group.options
+        .filter((option) => (optionSelections[group.id] ?? []).includes(option.id))
+        .map((option) => option.nome),
+    );
+
+    adicionarAoCarrinho({
+      ...optionProduct,
+      preco: calcularPrecoComAdicionais(optionProduct),
+      selectedOptions,
+      optionsLabel: selectedNames.join(', '),
+    } as Product & Pick<CartItem, 'selectedOptions' | 'optionsLabel'>);
+    setOptionProduct(null);
+    setOptionSelections({});
+    setOrderError('');
+  }
+
+  function adicionarAoCarrinho(product: Product & Partial<CartItem>) {
+    if ((product.optionGroups?.length ?? 0) > 0 && !product.selectedOptions) {
+      abrirAdicionais(product);
+      return;
+    }
     const trackingItem = buildTrackingItem(product);
     trackEcommerceEvent('add_to_cart', product.preco, [trackingItem], { sendCapi: true });
 
     setCarrinho((items) => {
-      const existente = items.find((i) => i.id === product.id);
+      const selectedKey = JSON.stringify(product.selectedOptions ?? []);
+      const existente = items.find((i) => i.id === product.id && JSON.stringify(i.selectedOptions ?? []) === selectedKey);
       if (existente)
         return items.map((i) =>
-          i.id === product.id ? { ...i, quantidade: i.quantidade + 1 } : i,
+          i.id === product.id && JSON.stringify(i.selectedOptions ?? []) === selectedKey
+            ? { ...i, quantidade: i.quantidade + 1 }
+            : i,
         );
       return [...items, { ...product, quantidade: 1 }];
     });
@@ -480,7 +567,11 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
         paymentMethod,
         customerDocument: customerDocument.replace(/\D/g, '') || undefined,
         notes: notes.trim() || undefined,
-        items: carrinho.map((i) => ({ productId: i.id, quantity: i.quantidade })),
+        items: carrinho.map((i) => ({
+          productId: i.id,
+          quantity: i.quantidade,
+          selectedOptions: i.selectedOptions,
+        })),
       };
 
       if (deliveryType === 'DELIVERY') {
@@ -807,6 +898,66 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
       </div>
 
       {/* ── FLOATING CART BUTTON ── */}
+      {optionProduct && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 shadow-xl sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-950">{optionProduct.nome}</h2>
+                <p className="mt-1 text-sm font-semibold" style={{ color: cor }}>
+                  {formatarPreco(optionProduct.preco)}
+                </p>
+              </div>
+              <button type="button" onClick={() => setOptionProduct(null)} className="rounded-full border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-600">
+                Fechar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {(optionProduct.optionGroups ?? []).map((group) => (
+                <section key={group.id} className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{group.nome}</h3>
+                      <p className="text-xs text-gray-500">
+                        {group.maxSelections === 1 ? 'Escolha uma opcao' : `Escolha ate ${group.maxSelections} opcoes`}
+                        {group.required ? ' - obrigatorio' : ''}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-bold uppercase text-gray-500">
+                      {group.maxSelections === 1 ? 'single' : 'multi'}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {group.options.filter((option) => option.available).map((option) => {
+                      const checked = (optionSelections[group.id] ?? []).includes(option.id);
+                      return (
+                        <button key={option.id} type="button" onClick={() => toggleOption(group, option.id)} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3 text-left text-sm">
+                          <span className="flex items-center gap-3">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full border" style={{ borderColor: checked ? cor : '#d1d5db', backgroundColor: checked ? cor : '#fff' }}>
+                              {checked ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
+                            </span>
+                            <span className="font-medium text-gray-800">{option.nome}</span>
+                          </span>
+                          <span className="font-semibold text-gray-700">
+                            {option.priceModifier > 0 ? `+ ${formatarPreco(option.priceModifier)}` : formatarPreco(0)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            {orderError && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{orderError}</div>}
+            <button type="button" onClick={adicionarProdutoComAdicionais} className="mt-5 w-full rounded-2xl px-5 py-4 text-sm font-bold text-white" style={{ backgroundColor: cor }}>
+              Adicionar ao carrinho - {formatarPreco(calcularPrecoComAdicionais(optionProduct))}
+            </button>
+          </div>
+        </div>
+      )}
+
       {carrinho.length > 0 && !carrinhoAberto && (
         <div className="fixed bottom-0 inset-x-0 p-4 z-40 pointer-events-none">
           <div className="max-w-3xl mx-auto pointer-events-auto">
@@ -1222,10 +1373,11 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
 
                       <div className="rounded-2xl bg-gray-100 p-4 flex flex-col gap-3">
                         <h3 className="text-sm font-bold text-gray-950">Itens do pedido</h3>
-                        {carrinho.map((item) => (
-                          <div key={item.id} className="flex justify-between gap-3 text-sm">
+                        {carrinho.map((item, index) => (
+                          <div key={`${item.id}-${index}`} className="flex justify-between gap-3 text-sm">
                             <span className="text-gray-700">
                               {item.quantidade}x {item.nome}
+                              {item.optionsLabel ? <small className="block text-xs text-gray-500">{item.optionsLabel}</small> : null}
                             </span>
                             <span className="font-bold text-gray-900">
                               {formatarPreco(item.preco * item.quantidade)}
@@ -1346,9 +1498,9 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
                 <>
                   {/* ── ITEMS ── */}
                   <div className="px-5 pt-4 pb-2 flex flex-col gap-2">
-                    {carrinho.map((item) => (
+                    {carrinho.map((item, index) => (
                       <div
-                        key={item.id}
+                        key={`${item.id}-${index}`}
                         className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0"
                       >
                         <div className="flex-1 min-w-0">
@@ -1358,6 +1510,9 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
                           <p className="text-xs text-gray-400 mt-0.5">
                             {formatarPreco(item.preco)} / un.
                           </p>
+                          {item.optionsLabel ? (
+                            <p className="mt-0.5 text-xs text-gray-500">{item.optionsLabel}</p>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <button

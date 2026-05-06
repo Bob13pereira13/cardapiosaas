@@ -13,6 +13,8 @@ import {
   LogOut,
   Menu,
   Package,
+  Plug,
+  QrCode,
   Search,
   SlidersHorizontal,
   Store,
@@ -60,6 +62,7 @@ const navSections: NavSection[] = [
       { href: '/dashboard/produtos', label: 'Produtos', icon: Package },
       { href: '/dashboard/categorias', label: 'Categorias', icon: LayoutGrid },
       { href: '/dashboard/cupons', label: 'Cupons', icon: Ticket },
+      { href: '/dashboard/qrcode', label: 'QR Code', icon: QrCode },
     ],
   },
   {
@@ -79,6 +82,7 @@ const navSections: NavSection[] = [
     label: 'Conta',
     items: [
       { href: '/dashboard/configuracoes', label: 'Configuracoes', icon: SlidersHorizontal },
+      { href: '/dashboard/integracoes', label: 'Integracoes', icon: Plug },
       { href: '/dashboard/assinatura', label: 'Assinatura', icon: CreditCard },
     ],
   },

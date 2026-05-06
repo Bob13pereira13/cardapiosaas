@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsEmail,
   IsHexColor,
   IsNumber,
   IsOptional,
@@ -13,6 +14,7 @@ import { Type } from 'class-transformer';
 
 export class UpdateMeDto {
   @IsOptional() @IsString() @MinLength(2) @MaxLength(100) nome?: string;
+  @IsOptional() @IsEmail() email?: string;
 
   @IsOptional()
   @IsString()

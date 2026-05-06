@@ -22,6 +22,7 @@ import { AsaasPaymentService } from './asaas-payment.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 
 type AsaasOrderWebhookPayload = {
   event?: string;
@@ -78,6 +79,7 @@ export class OrdersService {
     private coupons: CouponsService,
     private gateway: OrdersGateway,
     private asaasPayment: AsaasPaymentService,
+    private loyalty: LoyaltyService,
   ) {}
 
   private normalizeHost(host?: string) {
@@ -637,6 +639,21 @@ export class OrdersService {
     ]);
 
     this.gateway.emitStatusChanged(userId, id, newStatus);
+
+    if (newStatus === OrderStatus.DELIVERED) {
+      this.gateway.emitWhatsappPrompt(userId, {
+        orderId: id,
+        customerPhone: updated.customerPhone,
+        customerName: updated.customerName,
+      });
+    }
+
+    if (newStatus === OrderStatus.DELIVERED && updated.customerId) {
+      void this.loyalty
+        .awardPoints(userId, updated.customerId, id, updated.total)
+        .catch(() => undefined);
+    }
+
     return updated;
   }
 

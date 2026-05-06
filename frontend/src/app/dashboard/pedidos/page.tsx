@@ -186,6 +186,17 @@ export default function PedidosPage() {
         current.map((order) => (order.id === orderId ? { ...order, paymentStatus: 'PAID' } : order)),
       )
     })
+    socket.on('whatsapp:prompt', ({ customerPhone, customerName }: { orderId: number; customerPhone: string; customerName: string }) => {
+      toast(`Enviar confirmacao de entrega para ${customerName} no WhatsApp?`, {
+        action: {
+          label: 'Sim',
+          onClick: () => {
+            const phone = customerPhone.replace(/\D/g, '')
+            window.open(`https://wa.me/${phone}?text=Seu+pedido+foi+entregue!`, '_blank')
+          },
+        },
+      })
+    })
 
     return () => {
       socket.disconnect()

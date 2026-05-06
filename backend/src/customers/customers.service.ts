@@ -62,6 +62,40 @@ export class CustomersService {
     };
   }
 
+  async anonymize(userId: number, customerId: number) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, userId },
+    });
+    if (!customer) throw new NotFoundException('Cliente não encontrado.');
+
+    await this.prisma.$transaction([
+      this.prisma.customerAuth.deleteMany({ where: { customerId } }),
+      this.prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          name: `Anonimizado #${customerId}`,
+          phone: '',
+          document: null,
+        },
+      }),
+    ]);
+
+    return { anonymized: true };
+  }
+
+  async exportGdpr(userId: number, customerId: number) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, userId },
+      include: {
+        orders: {
+          include: { items: true },
+        },
+      },
+    });
+    if (!customer) throw new NotFoundException('Cliente não encontrado.');
+    return customer;
+  }
+
   async exportCsv(userId: number) {
     const customers = await this.findAll(userId);
     const lines = [

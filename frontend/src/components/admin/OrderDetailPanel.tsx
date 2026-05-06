@@ -1,8 +1,9 @@
 'use client'
 
-import { Clock, Phone, ReceiptText, Truck } from 'lucide-react'
+import { Clock, Phone, Printer, ReceiptText, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { printOrder } from '@/lib/print-order'
 import { OrderOriginBadge } from './OrderOriginBadge'
 import { StatusBadge } from './StatusBadge'
 import {
@@ -50,6 +51,10 @@ export function OrderDetailPanel({ order, updating, onStatusChange }: Props) {
         <div className="text-left md:text-right">
           <p className="text-sm text-zinc-500">Total</p>
           <p className="text-2xl font-bold text-brand-red">{formatCurrency(order.total)}</p>
+          <Button type="button" variant="outline" size="sm" className="mt-2 gap-2" onClick={() => printOrder(order)}>
+            <Printer className="h-4 w-4" />
+            Imprimir
+          </Button>
         </div>
       </div>
 

@@ -1,12 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma, SubscriptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { UpdateMeDto } from './dto/update-me.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private mail: MailService) {}
 
   private hideTrackingToken<
     T extends {
@@ -45,7 +46,7 @@ export class UsersService {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 7);
 
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         nome: data.nome,
         email: data.email,
@@ -55,6 +56,8 @@ export class UsersService {
         trialEndsAt,
       },
     });
+    void this.mail.sendWelcome(user.email, user.nome, slug).catch(() => undefined);
+    return user;
   }
 
   async findByEmail(email: string) {
@@ -170,6 +173,7 @@ export class UsersService {
 
   async updateMe(userId: number, data: UpdateMeDto) {
     let slugFormatado: string | undefined;
+    let hashedPassword: string | undefined;
 
     if (data.slug !== undefined || data.nome !== undefined) {
       slugFormatado = this.gerarSlug(data.slug || data.nome || '');
@@ -184,6 +188,18 @@ export class UsersService {
       if (slugExistente) {
         throw new BadRequestException('Este slug já está em uso.');
       }
+    }
+
+    if (data.newPassword) {
+      const currentUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { password: true },
+      });
+      const valid = currentUser && data.currentPassword
+        ? await bcrypt.compare(data.currentPassword, currentUser.password)
+        : false;
+      if (!valid) throw new BadRequestException('Senha atual invalida.');
+      hashedPassword = await bcrypt.hash(data.newPassword, 10);
     }
 
     const customDomain = this.normalizeDomain(data.customDomain);
@@ -211,6 +227,8 @@ export class UsersService {
       where: { id: userId },
       data: {
         nome: data.nome,
+        email: data.email,
+        password: hashedPassword,
         whatsapp: data.whatsapp,
         slug: slugFormatado,
         logo: data.logo,

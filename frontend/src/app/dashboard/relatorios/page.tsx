@@ -1,148 +1,143 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, BarChart2, Clock, CreditCard, ShoppingBag, TrendingUp } from 'lucide-react'
-import { API_URL } from '@/lib/config'
-import { getToken, handleUnauthorized } from '@/lib/auth'
-import { PageHeader } from '@/components/admin/PageHeader'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { API_URL } from '@/lib/config';
+import { getToken, handleUnauthorized } from '@/lib/auth';
+import { PageHeader } from '@/components/admin/PageHeader';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type Period = 'TODAY' | 'WEEK' | 'MONTH'
 type Summary = {
-  totalRevenue: number
-  totalOrders: number
-  averageTicket: number
-  cancelRate: number
-  topProducts: { nome: string; count: number; revenue: number }[]
-  topCategories: { nome: string; count: number }[]
-  paymentMethods: { method: string; count: number; total: number }[]
-  dailySeries: { date: string; orders: number; revenue: number }[]
-  peakHours: { hour: number; count: number }[]
-}
-
-const periods: Array<{ key: Period; label: string }> = [
-  { key: 'TODAY', label: 'Hoje' },
-  { key: 'WEEK', label: '7 dias' },
-  { key: 'MONTH', label: '30 dias' },
-]
+  dailySeries: { date: string; orders: number; revenue: number }[];
+  topProducts: { nome: string; count: number; revenue: number }[];
+  paymentMethods: { method: string; count: number; total: number }[];
+};
+type Abc = { productName?: string; nome?: string; revenue: number; classification?: string; class?: string };
+type Ltv = { customerName?: string; name?: string; phone?: string; ltv?: number; totalSpent?: number; ordersCount?: number };
+type Hour = { hour: number; revenue?: number; total?: number; orders?: number };
 
 function fmt(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
-
-function MetricCard({ title, value, icon: Icon, up = true }: { title: string; value: string; icon: typeof BarChart2; up?: boolean }) {
-  const TrendIcon = up ? ArrowUp : ArrowDown
-  return (
-    <div className="rounded-lg border bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <span className="rounded-lg bg-brand-red-soft p-2 text-brand-red"><Icon className="h-4 w-4" /></span>
-        <span className={cn('flex items-center gap-1 text-xs font-medium', up ? 'text-emerald-600' : 'text-red-600')}>
-          <TrendIcon className="h-3 w-3" /> {up ? '+8%' : '-3%'}
-        </span>
-      </div>
-      <p className="mt-4 text-sm text-zinc-500">{title}</p>
-      <strong className="mt-1 block text-2xl text-zinc-950">{value}</strong>
-    </div>
-  )
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 export default function RelatoriosPage() {
-  const [period, setPeriod] = useState<Period>('WEEK')
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [abc, setAbc] = useState<Abc[]>([]);
+  const [ltv, setLtv] = useState<Ltv[]>([]);
+  const [hours, setHours] = useState<Hour[]>([]);
+
+  const load = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      window.location.href = '/login';
+      return;
+    }
+    const headers = { Authorization: `Bearer ${token}` };
+    const [summaryRes, abcRes, ltvRes, hoursRes] = await Promise.all([
+      fetch(`${API_URL}/reports/summary?period=MONTH`, { headers }),
+      fetch(`${API_URL}/reports/abc?period=MONTH`, { headers }),
+      fetch(`${API_URL}/reports/customer-ltv`, { headers }),
+      fetch(`${API_URL}/reports/revenue-by-hour?period=MONTH`, { headers }),
+    ]);
+    if (handleUnauthorized(summaryRes)) return;
+    if (summaryRes.ok) setSummary(await summaryRes.json());
+    if (abcRes.ok) setAbc(await abcRes.json());
+    if (ltvRes.ok) setLtv(await ltvRes.json());
+    if (hoursRes.ok) setHours(await hoursRes.json());
+  }, []);
 
   useEffect(() => {
-    async function load() {
-      setLoading(true)
-      const token = getToken()
-      if (!token) { window.location.href = '/login'; return }
-      const res = await fetch(`${API_URL}/reports/summary?period=${period}`, { headers: { Authorization: `Bearer ${token}` } })
-      if (handleUnauthorized(res)) return
-      if (res.ok) setSummary(await res.json())
-      setLoading(false)
-    }
-    void load()
-  }, [period])
+    void load();
+  }, [load]);
 
-  const maxRevenue = useMemo(() => Math.max(1, ...(summary?.dailySeries.map((item) => item.revenue) ?? [1])), [summary])
-  const totalPaymentCount = summary?.paymentMethods.reduce((sum, item) => sum + item.count, 0) ?? 1
-  const maxHour = Math.max(1, ...(summary?.peakHours.map((item) => item.count) ?? [1]))
+  const maxDaily = useMemo(() => Math.max(1, ...(summary?.dailySeries?.map((item) => item.revenue) ?? [1])), [summary]);
+  const maxHour = useMemo(() => Math.max(1, ...hours.map((item) => item.revenue ?? item.total ?? 0)), [hours]);
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Relatórios" description="Acompanhe vendas, horários de pico e produtos mais vendidos." />
+      <PageHeader title="Relatorios" description="Analise vendas, produtos, clientes e horarios." />
+      <Tabs defaultValue="resumo" className="space-y-4">
+        <TabsList className="flex h-auto flex-wrap justify-start">
+          <TabsTrigger value="resumo">Resumo</TabsTrigger>
+          <TabsTrigger value="abc">Curva ABC</TabsTrigger>
+          <TabsTrigger value="ltv">Clientes LTV</TabsTrigger>
+          <TabsTrigger value="horarios">Horarios</TabsTrigger>
+        </TabsList>
 
-      <div className="flex flex-wrap gap-2">
-        {periods.map((item) => (
-          <Button key={item.key} type="button" variant={period === item.key ? 'default' : 'outline'} className={period === item.key ? 'bg-brand-red hover:bg-brand-red/90' : ''} onClick={() => setPeriod(item.key)}>
-            {item.label}
-          </Button>
+        <TabsContent value="resumo" className="space-y-5">
+          <section className="rounded-lg border bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-zinc-900">Vendas diarias</h2>
+            <div className="mt-5 flex h-56 items-end gap-3">
+              {(summary?.dailySeries ?? []).map((item) => (
+                <div key={item.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                  <div className="w-full rounded-t bg-brand-red" style={{ height: `${Math.max(8, (item.revenue / maxDaily) * 180)}px` }} />
+                  <span className="truncate text-[11px] text-zinc-500">{new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <SimpleList title="Top produtos" rows={(summary?.topProducts ?? []).map((p) => [p.nome, `${p.count} vendas - ${fmt(p.revenue)}`])} />
+            <SimpleList title="Pagamentos" rows={(summary?.paymentMethods ?? []).map((p) => [p.method, `${p.count} pedidos - ${fmt(p.total)}`])} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="abc">
+          <DataTable headers={['Produto', 'Receita', 'Classe']} rows={abc.map((item) => [item.productName ?? item.nome ?? '-', fmt(item.revenue), item.classification ?? item.class ?? '-'])} />
+        </TabsContent>
+
+        <TabsContent value="ltv">
+          <DataTable headers={['Cliente', 'Telefone', 'Pedidos', 'LTV']} rows={ltv.slice(0, 50).map((item) => [item.customerName ?? item.name ?? '-', item.phone ?? '-', String(item.ordersCount ?? '-'), fmt(item.ltv ?? item.totalSpent ?? 0)])} />
+        </TabsContent>
+
+        <TabsContent value="horarios">
+          <section className="rounded-lg border bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-zinc-900">Receita por hora</h2>
+            <div className="mt-5 flex h-64 items-end gap-2">
+              {hours.map((item) => {
+                const value = item.revenue ?? item.total ?? 0;
+                return (
+                  <div key={item.hour} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                    <div className="w-full rounded-t bg-brand-red" style={{ height: `${Math.max(8, (value / maxHour) * 210)}px` }} />
+                    <span className="text-[11px] text-zinc-500">{String(item.hour).padStart(2, '0')}h</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function SimpleList({ title, rows }: { title: string; rows: string[][] }) {
+  return (
+    <section className="rounded-lg border bg-white p-5 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold text-zinc-900">{title}</h2>
+      <div className="space-y-2">
+        {rows.map(([left, right]) => (
+          <div key={`${left}-${right}`} className="flex justify-between rounded-md bg-zinc-50 px-3 py-2 text-sm">
+            <span>{left}</span><strong>{right}</strong>
+          </div>
         ))}
       </div>
+    </section>
+  );
+}
 
-      {loading ? (
-        <div className="grid gap-4 md:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-32 animate-pulse rounded-lg bg-zinc-100" />)}</div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-4">
-          <MetricCard title="Receita total" value={fmt(summary?.totalRevenue ?? 0)} icon={TrendingUp} />
-          <MetricCard title="Pedidos" value={String(summary?.totalOrders ?? 0)} icon={ShoppingBag} />
-          <MetricCard title="Ticket médio" value={fmt(summary?.averageTicket ?? 0)} icon={CreditCard} />
-          <MetricCard title="Taxa de cancelamento" value={`${(((summary?.cancelRate ?? 0) * 100)).toFixed(1)}%`} icon={BarChart2} up={false} />
-        </div>
-      )}
-
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-zinc-900">Últimos dias</h2>
-        <div className="mt-5 flex h-56 items-end gap-3">
-          {(summary?.dailySeries ?? []).map((item) => (
-            <div key={item.date} className="group flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="relative flex w-full items-end justify-center">
-                <div className="w-full rounded-t bg-brand-red transition hover:bg-brand-red/80" style={{ height: `${Math.max(8, (item.revenue / maxRevenue) * 180)}px` }} />
-                <div className="pointer-events-none absolute bottom-full mb-2 hidden rounded bg-zinc-950 px-2 py-1 text-xs text-white group-hover:block">{fmt(item.revenue)}</div>
-              </div>
-              <span className="truncate text-[11px] text-zinc-500">{new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
-            </div>
+function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+      <table className="w-full text-sm">
+        <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+          <tr>{headers.map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map((row, index) => (
+            <tr key={index}>{row.map((cell, cellIndex) => <td key={`${index}-${cellIndex}`} className="px-4 py-3">{cell}</td>)}</tr>
           ))}
-        </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-lg border bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-900">Produtos mais vendidos</h2>
-          <div className="space-y-3">
-            {(summary?.topProducts ?? []).map((product, index) => (
-              <div key={product.nome}>
-                <div className="flex justify-between text-sm"><span>{index + 1}. {product.nome}</span><strong>{product.count} vendas</strong></div>
-                <div className="mt-2 h-2 rounded-full bg-zinc-100"><div className="h-2 rounded-full bg-brand-red" style={{ width: `${Math.min(100, product.count * 10)}%` }} /></div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-900">Formas de pagamento</h2>
-          <div className="space-y-3">
-            {(summary?.paymentMethods ?? []).map((method) => (
-              <div key={method.method} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm">
-                <span className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-brand-red" /> {method.method}</span>
-                <span>{method.count} ({Math.round((method.count / totalPaymentCount) * 100)}%)</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border bg-white p-5 shadow-sm">
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-zinc-900"><Clock className="h-4 w-4" /> Horários de pico</h2>
-        <div className="grid grid-cols-12 gap-2">
-          {(summary?.peakHours ?? []).map((hour) => (
-            <div key={hour.hour} className="rounded p-2 text-center text-[11px]" style={{ backgroundColor: hour.count ? `rgba(230,57,70,${0.15 + (hour.count / maxHour) * 0.65})` : '#f4f4f5' }}>
-              {String(hour.hour).padStart(2, '0')}h
-            </div>
-          ))}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </div>
-  )
+  );
 }

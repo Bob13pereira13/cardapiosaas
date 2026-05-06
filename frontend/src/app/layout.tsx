@@ -19,6 +19,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className={cn("h-full", "font-sans", geist.variable)}>
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#E63946" />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

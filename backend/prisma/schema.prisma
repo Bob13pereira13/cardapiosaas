@@ -152,6 +152,12 @@ model User {
   orders            Order[]
   coupons           Coupon[]
   customers         Customer[]
+
+  loyaltyEnabled      Boolean  @default(false)
+  loyaltyPointsPerBrl Float    @default(1)
+  loyaltyRedeemRate   Float    @default(100)
+  npsEnabled          Boolean  @default(true)
+  npsDaysAfterOrder   Int      @default(1)
 }
 
 model Category {
@@ -261,6 +267,10 @@ model Order {
   deliveredAt       DateTime?
   canceledAt        DateTime?
 
+  loyaltyPointsEarned Int?
+  loyaltyPointsUsed   Int?
+  npsRequested        Boolean @default(false)
+
   @@unique([userId, orderNumber])
   @@index([userId, orderStatus])
   @@index([userId, createdAt])
@@ -280,6 +290,11 @@ model Customer {
   lastOrderAt DateTime?
 
   orders      Order[]
+
+  auth           CustomerAuth?
+  loyaltyPoints  LoyaltyPoints[]
+  loyaltyTx      LoyaltyTransaction[]
+  npsResponses   NpsResponse[]
 
   @@unique([userId, phone])
   @@index([userId, name])
@@ -330,4 +345,61 @@ model Coupon {
 
   @@unique([userId, code])
   @@index([userId, active])
+}
+
+model CustomerAuth {
+  id         Int       @id @default(autoincrement())
+  customerId Int       @unique
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  phone      String
+  userId     Int
+  pin        String?
+  pinExpiry  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model LoyaltyPoints {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userId      Int
+  points      Int      @default(0)
+  totalEarned Int      @default(0)
+  totalSpent  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  @@unique([customerId, userId])
+}
+
+model LoyaltyTransaction {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userId      Int
+  orderId     Int?
+  type        String
+  points      Int
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model NpsResponse {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  orderId    Int?
+  score      Int
+  comment    String?
+  createdAt  DateTime  @default(now())
+}
+
+model CartAbandonment {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  phone      String?
+  cartData   Json
+  notified   Boolean   @default(false)
+  notifiedAt DateTime?
+  createdAt  DateTime  @default(now())
 }

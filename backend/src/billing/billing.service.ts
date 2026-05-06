@@ -8,6 +8,7 @@ import { SubscriptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AsaasBillingService } from './asaas-billing.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
+import { MailService } from '../mail/mail.service';
 
 type AsaasWebhookPayload = {
   event?: string;
@@ -27,6 +28,7 @@ export class BillingService {
   constructor(
     private prisma: PrismaService,
     private asaas: AsaasBillingService,
+    private mail: MailService,
   ) {}
 
   async createSubscription(
@@ -138,10 +140,26 @@ export class BillingService {
       return { received: true, ignored: true };
     }
 
+    const updated = await this.prisma.user.findFirst({
+      where: { asaasSubscriptionId: subscriptionId },
+      select: { id: true, email: true, nome: true, plan: true },
+    });
+
     await this.prisma.user.updateMany({
       where: { asaasSubscriptionId: subscriptionId },
       data: { subscriptionStatus },
     });
+
+    if (updated) {
+      if (subscriptionStatus === SubscriptionStatus.ACTIVE) {
+        const nextBilling = this.formatDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+        void this.mail.sendSubscriptionConfirmed(updated.email, updated.nome, updated.plan ?? 'básico', nextBilling).catch(() => undefined);
+      } else if (subscriptionStatus === SubscriptionStatus.CANCELED) {
+        void this.mail.sendSubscriptionCanceled(updated.email, updated.nome).catch(() => undefined);
+      } else if (subscriptionStatus === SubscriptionStatus.OVERDUE) {
+        void this.mail.sendPaymentFailed(updated.email, updated.nome).catch(() => undefined);
+      }
+    }
 
     return { received: true };
   }

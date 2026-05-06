@@ -263,6 +263,9 @@ export default function ProdutosPage() {
                       <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/produtos/${product.id}/editar`)}>
                         Editar
                       </Button>
+                      <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/produtos/${product.id}/adicionais`)}>
+                        Adicionais
+                      </Button>
                       <Button variant="outline" size="sm" disabled={duplicatingId === product.id} onClick={() => void duplicateProduct(product)}>
                         <Copy className="h-3.5 w-3.5" />
                         {duplicatingId === product.id ? '...' : 'Duplicar'}

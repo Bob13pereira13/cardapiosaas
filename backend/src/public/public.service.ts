@@ -21,6 +21,12 @@ export class PublicService {
       preco: true,
       imagem: true,
       categoryId: true,
+      optionGroups: {
+        orderBy: { displayOrder: 'asc' as const },
+        include: {
+          options: { where: { available: true }, orderBy: { displayOrder: 'asc' as const } },
+        },
+      },
     };
 
     const onlyAvailable = { disponivel: true };
@@ -141,6 +147,27 @@ export class PublicService {
     });
     if (!order) throw new NotFoundException('Pedido não encontrado.');
     return order;
+  }
+
+  async submitNps(body: { orderId: number; score: number; comment?: string }) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: body.orderId },
+      select: { id: true, userId: true, customerId: true },
+    });
+    if (!order) return { received: true };
+    await this.prisma.npsResponse.create({
+      data: {
+        userId: order.userId,
+        customerId: order.customerId,
+        orderId: order.id,
+        score: body.score,
+        comment: body.comment,
+      },
+    });
+    if (order.id) {
+      await this.prisma.order.update({ where: { id: order.id }, data: { npsRequested: true } });
+    }
+    return { received: true };
   }
 
   async getOrderStatus(id: number) {
