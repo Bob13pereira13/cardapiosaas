@@ -7,11 +7,13 @@ import { AsaasPaymentService } from './asaas-payment.service';
 import { PaymentsController } from './payments.controller';
 import { CouponsModule } from '../coupons/coupons.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     CouponsModule,
     LoyaltyModule,
+    AuditModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
     }),

@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private audit: AuditService) {}
 
   async create(data: {
     nome: string;
@@ -20,7 +21,7 @@ export class ProductsService {
     categoryId?: number;
     userId: number;
   }) {
-    return this.prisma.product.create({
+    const product = await this.prisma.product.create({
       data: {
         nome: data.nome,
         descricao: data.descricao,
@@ -37,6 +38,8 @@ export class ProductsService {
         userId: data.userId,
       },
     });
+    void this.audit.log(data.userId, 'PRODUCT_CREATE', 'Product', product.id, { nome: data.nome });
+    return product;
   }
 
   async findByUser(userId: number, page = 1, limit = 20) {
@@ -87,9 +90,9 @@ export class ProductsService {
   }
 
   async delete(id: number, userId: number) {
-    return this.prisma.product.deleteMany({
-      where: { id, userId },
-    });
+    const result = await this.prisma.product.deleteMany({ where: { id, userId } });
+    if (result.count > 0) void this.audit.log(userId, 'PRODUCT_DELETE', 'Product', id);
+    return result;
   }
 
   async reorder(userId: number, ids: number[]) {

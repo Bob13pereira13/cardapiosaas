@@ -23,6 +23,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { AuditService } from '../audit/audit.service';
 
 type AsaasOrderWebhookPayload = {
   event?: string;
@@ -80,6 +81,7 @@ export class OrdersService {
     private gateway: OrdersGateway,
     private asaasPayment: AsaasPaymentService,
     private loyalty: LoyaltyService,
+    private audit: AuditService,
   ) {}
 
   private normalizeHost(host?: string) {
@@ -646,6 +648,7 @@ export class OrdersService {
     ]);
 
     this.gateway.emitStatusChanged(userId, id, newStatus);
+    void this.audit.log(userId, `ORDER_STATUS_CHANGE`, 'Order', id, { from: order.orderStatus, to: newStatus });
 
     if (newStatus === OrderStatus.DELIVERED) {
       this.gateway.emitWhatsappPrompt(userId, {

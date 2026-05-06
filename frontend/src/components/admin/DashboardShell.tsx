@@ -25,6 +25,7 @@ import {
   Store,
   Table2,
   Ticket,
+  UtensilsCrossed,
   Users,
   Utensils,
   Wallet,
@@ -69,6 +70,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/dashboard/produtos', label: 'Produtos', icon: Package },
       { href: '/dashboard/categorias', label: 'Categorias', icon: LayoutGrid },
+      { href: '/dashboard/combos', label: 'Combos', icon: UtensilsCrossed },
       { href: '/dashboard/cupons', label: 'Cupons', icon: Ticket },
       { href: '/dashboard/qrcode', label: 'QR Code', icon: QrCode },
     ],
