@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsInt,
   IsNotEmpty,
@@ -45,4 +46,9 @@ export class CreateProductDto {
   @IsInt()
   @Min(1)
   categoryId?: number;
+
+  @IsOptional() @IsBoolean() disponibilidadeAtiva?: boolean;
+  @IsOptional() @IsString() disponibilidadeInicio?: string;
+  @IsOptional() @IsString() disponibilidadeFim?: string;
+  @IsOptional() @IsArray() @IsInt({ each: true }) disponibilidadeDias?: number[];
 }

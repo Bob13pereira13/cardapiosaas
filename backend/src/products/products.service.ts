@@ -20,6 +20,10 @@ export class ProductsService {
     disponivel?: boolean;
     categoryId?: number;
     userId: number;
+    disponibilidadeAtiva?: boolean;
+    disponibilidadeInicio?: string;
+    disponibilidadeFim?: string;
+    disponibilidadeDias?: number[];
   }) {
     const product = await this.prisma.product.create({
       data: {
@@ -36,6 +40,10 @@ export class ProductsService {
         disponivel: data.disponivel ?? true,
         categoryId: data.categoryId,
         userId: data.userId,
+        disponibilidadeAtiva: data.disponibilidadeAtiva ?? false,
+        disponibilidadeInicio: data.disponibilidadeInicio,
+        disponibilidadeFim: data.disponibilidadeFim,
+        disponibilidadeDias: data.disponibilidadeDias ? { set: data.disponibilidadeDias } : undefined,
       },
     });
     void this.audit.log(data.userId, 'PRODUCT_CREATE', 'Product', product.id, { nome: data.nome });
@@ -81,11 +89,19 @@ export class ProductsService {
       imagem?: string;
       disponivel?: boolean;
       categoryId?: number;
+      disponibilidadeAtiva?: boolean;
+      disponibilidadeInicio?: string | null;
+      disponibilidadeFim?: string | null;
+      disponibilidadeDias?: number[];
     },
   ) {
+    const { disponibilidadeDias, ...rest } = data;
     return this.prisma.product.updateMany({
       where: { id, userId },
-      data,
+      data: {
+        ...rest,
+        ...(disponibilidadeDias !== undefined ? { disponibilidadeDias: { set: disponibilidadeDias } } : {}),
+      },
     });
   }
 

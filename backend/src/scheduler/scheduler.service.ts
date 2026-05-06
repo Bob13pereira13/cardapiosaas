@@ -122,6 +122,34 @@ export class SchedulerService {
     }
   }
 
+  @Cron('*/30 * * * *')
+  async enforceProductAvailability() {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const products = await this.prisma.product.findMany({
+      where: { disponibilidadeAtiva: true },
+      select: { id: true, disponibilidadeInicio: true, disponibilidadeFim: true, disponibilidadeDias: true },
+    });
+
+    let updated = 0;
+    for (const product of products) {
+      const inDay = !product.disponibilidadeDias.length || product.disponibilidadeDias.includes(currentDay);
+      const inTime =
+        !product.disponibilidadeInicio ||
+        !product.disponibilidadeFim ||
+        (currentTime >= product.disponibilidadeInicio && currentTime <= product.disponibilidadeFim);
+      const shouldBeAvailable = inDay && inTime;
+      await this.prisma.product.update({ where: { id: product.id }, data: { disponivel: shouldBeAvailable } });
+      updated++;
+    }
+
+    if (updated > 0) {
+      this.logger.log(`Product availability enforced: ${updated} products updated`);
+    }
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async expireTrials() {
     const result = await this.prisma.user.updateMany({

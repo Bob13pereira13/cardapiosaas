@@ -21,6 +21,10 @@ export class PublicService {
       preco: true,
       imagem: true,
       categoryId: true,
+      disponibilidadeAtiva: true,
+      disponibilidadeInicio: true,
+      disponibilidadeFim: true,
+      disponibilidadeDias: true,
       optionGroups: {
         orderBy: { displayOrder: 'asc' as const },
         include: {
@@ -91,7 +95,25 @@ export class PublicService {
           ]
         : user.categories;
 
-    const categories = allCategories.filter((c) => c.products.length > 0);
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    function isProductAvailableNow(product: { disponibilidadeAtiva?: boolean; disponibilidadeInicio?: string | null; disponibilidadeFim?: string | null; disponibilidadeDias?: number[] }): boolean {
+      if (!product.disponibilidadeAtiva) return true;
+      if (product.disponibilidadeDias && !product.disponibilidadeDias.includes(currentDay)) return false;
+      if (product.disponibilidadeInicio && product.disponibilidadeFim) {
+        return currentTime >= product.disponibilidadeInicio && currentTime <= product.disponibilidadeFim;
+      }
+      return true;
+    }
+
+    const categoriesFiltered = allCategories.map((cat) => ({
+      ...cat,
+      products: cat.products.filter((p: any) => isProductAvailableNow(p)),
+    }));
+
+    const categories = categoriesFiltered.filter((c) => c.products.length > 0);
 
     const combos = await this.prisma.combo.findMany({
       where: { userId: user.id, ativo: true },

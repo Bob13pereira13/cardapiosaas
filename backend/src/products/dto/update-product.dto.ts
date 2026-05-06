@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsInt,
   IsNumber,
@@ -45,4 +46,9 @@ export class UpdateProductDto {
   @IsInt()
   @Min(1)
   categoryId?: number;
+
+  @IsOptional() @IsBoolean() disponibilidadeAtiva?: boolean;
+  @IsOptional() @IsString() disponibilidadeInicio?: string | null;
+  @IsOptional() @IsString() disponibilidadeFim?: string | null;
+  @IsOptional() @IsArray() @IsInt({ each: true }) disponibilidadeDias?: number[];
 }

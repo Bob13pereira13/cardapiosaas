@@ -39,7 +39,7 @@ type Category = {
 };
 
 type ComboItem = { quantidade: number; product: { id: number; nome: string; preco: number; imagem?: string | null } };
-type Combo = { id: number; nome: string; descricao?: string | null; preco: number; imagemUrl?: string | null; items: ComboItem[] };
+type Combo = { id: number; nome: string; descricao?: string | null; preco: number; imagem?: string | null; items: ComboItem[] };
 
 type Cardapio = {
   nome: string;
@@ -911,9 +911,9 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
           <div className="flex flex-col gap-3">
             {(cardapio.combos ?? []).map((combo) => (
               <article key={combo.id} className="bg-white rounded-2xl p-4 flex gap-4 border border-gray-100 hover:shadow-md transition-shadow duration-200">
-                {combo.imagemUrl && (
+                {combo.imagem && (
                   <div className="w-24 h-24 shrink-0 rounded-xl overflow-hidden bg-gray-100">
-                    <img src={combo.imagemUrl} alt={combo.nome} className="w-full h-full object-cover" />
+                    <img src={combo.imagem} alt={combo.nome} className="w-full h-full object-cover" />
                   </div>
                 )}
                 <div className="flex-1 min-w-0 flex flex-col justify-between">
