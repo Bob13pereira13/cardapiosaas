@@ -104,4 +104,7 @@ export class UpdateMeDto {
   // Troca de senha
   @IsOptional() @IsString() currentPassword?: string;
   @IsOptional() @IsString() newPassword?: string;
+
+  // Notificacoes
+  @IsOptional() @IsBoolean() notifEmailNewOrder?: boolean;
 }

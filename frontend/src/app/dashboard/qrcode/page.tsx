@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Copy, Download } from 'lucide-react';
+import { Copy, Download, FileText } from 'lucide-react';
 import { API_URL, APP_URL } from '@/lib/config';
 import { getToken, handleUnauthorized } from '@/lib/auth';
 import { PageHeader } from '@/components/admin/PageHeader';
@@ -27,6 +27,21 @@ export default function QrCodePage() {
   }, []);
 
   const publicUrl = slug ? `${APP_URL}/cardapio/${slug}` : '';
+  const qrSvgUrl = slug ? `${API_URL}/public/qrcode/${slug}` : '';
+
+  function downloadPdf() {
+    if (!slug) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>QR Code — ${slug}</title>
+      <style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;padding:40px}
+      img{width:280px;height:280px}h2{margin:20px 0 8px;font-size:18px}p{margin:0;color:#555;font-size:13px}
+      @media print{button{display:none}}</style></head>
+      <body><img src="${qrSvgUrl}" alt="QR Code"/>
+      <h2>${slug}</h2><p>${publicUrl}</p>
+      <script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`);
+    win.document.close();
+  }
 
   return (
     <div className="space-y-5">
@@ -56,6 +71,10 @@ export default function QrCodePage() {
                   <Download className="h-4 w-4" />
                   Baixar PNG
                 </a>
+              </Button>
+              <Button type="button" variant="outline" disabled={!slug} onClick={downloadPdf}>
+                <FileText className="h-4 w-4" />
+                Baixar PDF
               </Button>
             </div>
           </div>

@@ -14,6 +14,7 @@ const tabs = [
   { href: '/dashboard/configuracoes/dominio', label: 'Dominio' },
   { href: '/dashboard/configuracoes/whatsapp', label: 'WhatsApp' },
   { href: '/dashboard/configuracoes/usuarios', label: 'Usuarios' },
+  { href: '/dashboard/configuracoes/notificacoes', label: 'Notificacoes' },
 ]
 
 export function SettingsTabs() {

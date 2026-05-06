@@ -135,6 +135,7 @@ export class UsersService {
         emailSuporte: true,
         whatsappSuporte: true,
         urlPublica: true,
+        notifEmailNewOrder: true,
       },
     });
 
@@ -294,6 +295,7 @@ export class UsersService {
         emailSuporte:              data.emailSuporte,
         whatsappSuporte:           data.whatsappSuporte,
         urlPublica:                data.urlPublica,
+        notifEmailNewOrder:        data.notifEmailNewOrder,
       },
       select: {
         id: true,
@@ -350,6 +352,7 @@ export class UsersService {
         emailSuporte: true,
         whatsappSuporte: true,
         urlPublica: true,
+        notifEmailNewOrder: true,
       },
     });
 

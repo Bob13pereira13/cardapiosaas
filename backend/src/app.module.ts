@@ -23,6 +23,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { NpsModule } from './nps/nps.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
     CustomerAuthModule,
     SchedulerModule,
     IntegrationsModule,
+    NpsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

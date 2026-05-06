@@ -158,6 +158,8 @@ model User {
   loyaltyRedeemRate   Float    @default(100)
   npsEnabled          Boolean  @default(true)
   npsDaysAfterOrder   Int      @default(1)
+
+  notifEmailNewOrder  Boolean  @default(false)
 }
 
 model Category {
@@ -391,6 +393,8 @@ model NpsResponse {
   orderId    Int?
   score      Int
   comment    String?
+  reply      String?
+  repliedAt  DateTime?
   createdAt  DateTime  @default(now())
 }
 

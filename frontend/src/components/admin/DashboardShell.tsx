@@ -5,19 +5,25 @@ import { usePathname } from 'next/navigation'
 import {
   BarChart2,
   Bell,
+  CalendarDays,
   ChefHat,
   ClipboardList,
   CreditCard,
   ExternalLink,
   LayoutGrid,
   LogOut,
+  Megaphone,
   Menu,
+  MessageSquare,
   Package,
   Plug,
   QrCode,
+  ScrollText,
   Search,
   SlidersHorizontal,
+  Star,
   Store,
+  Table2,
   Ticket,
   Users,
   Utensils,
@@ -54,6 +60,8 @@ const navSections: NavSection[] = [
       { href: '/dashboard/inicio', label: 'Inicio', icon: Store },
       { href: '/dashboard/pedidos', label: 'Pedidos', icon: ClipboardList },
       { href: '/dashboard/kds', label: 'KDS', icon: ChefHat },
+      { href: '/dashboard/mesas', label: 'Mesas', icon: Table2 },
+      { href: '/dashboard/agenda', label: 'Agenda', icon: CalendarDays },
     ],
   },
   {
@@ -69,6 +77,14 @@ const navSections: NavSection[] = [
     label: 'Clientes',
     items: [
       { href: '/dashboard/clientes', label: 'Clientes', icon: Users },
+      { href: '/dashboard/fidelidade', label: 'Fidelidade', icon: Star },
+      { href: '/dashboard/avaliacoes', label: 'Avaliacoes', icon: MessageSquare },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      { href: '/dashboard/marketing', label: 'Campanhas', icon: Megaphone },
     ],
   },
   {
@@ -84,6 +100,7 @@ const navSections: NavSection[] = [
       { href: '/dashboard/configuracoes', label: 'Configuracoes', icon: SlidersHorizontal },
       { href: '/dashboard/integracoes', label: 'Integracoes', icon: Plug },
       { href: '/dashboard/assinatura', label: 'Assinatura', icon: CreditCard },
+      { href: '/dashboard/logs', label: 'Logs', icon: ScrollText },
     ],
   },
 ]

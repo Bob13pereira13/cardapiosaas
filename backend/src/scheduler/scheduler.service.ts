@@ -83,6 +83,45 @@ export class SchedulerService {
     }
   }
 
+  @Cron('0 10 * * *')
+  async sendCartAbandonmentEmails() {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const records = await this.prisma.cartAbandonment.findMany({
+      where: { notified: false, createdAt: { lt: twoHoursAgo } },
+    });
+
+    const userIds = [...new Set(records.map((r) => r.userId))];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, slug: true, urlPublica: true },
+    });
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    for (const record of records) {
+      const email = record.phone && record.phone.includes('@') ? record.phone : null;
+      const restaurant = userMap.get(record.userId);
+      const base = restaurant?.urlPublica ?? `https://cardapiopedeai.com.br/cardapio/${restaurant?.slug ?? ''}`;
+      const cartUrl = `${base}`;
+
+      if (email) {
+        try {
+          await this.mail.sendCartAbandonment(email, 'Cliente', cartUrl);
+        } catch {
+          this.logger.warn(`Cart abandonment email failed for record ${record.id}`);
+        }
+      }
+
+      await this.prisma.cartAbandonment.update({
+        where: { id: record.id },
+        data: { notified: true, notifiedAt: new Date() },
+      });
+    }
+
+    if (records.length > 0) {
+      this.logger.log(`Cart abandonment processed: ${records.length} records`);
+    }
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async expireTrials() {
     const result = await this.prisma.user.updateMany({
