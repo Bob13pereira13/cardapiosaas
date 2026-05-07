@@ -29,6 +29,7 @@ import { AgendaModule } from './agenda/agenda.module';
 import { CombosModule } from './combos/combos.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AuditModule } from './audit/audit.module';
+import { TeamModule } from './team/team.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AuditModule } from './audit/audit.module';
     CombosModule,
     CampaignsModule,
     AuditModule,
+    TeamModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

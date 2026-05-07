@@ -49,6 +49,22 @@ enum CouponType {
 enum OptionPriceMode {
   SUM
   HIGHEST
+  FIXED_TOTAL
+}
+
+enum OptionGroupTipo {
+  COMPLEMENTO
+  OPCAO
+  ADICIONAL
+  VARIACAO
+}
+
+enum TeamMemberRole {
+  OWNER
+  MANAGER
+  ATTENDANT
+  KITCHEN
+  CASHIER
 }
 
 enum ComandaStatus {
@@ -189,6 +205,7 @@ model User {
   combos            Combo[]
   campaigns         Campaign[]
   auditLogs         AuditLog[]
+  teamMembers       RestaurantTeamMember[]
 
   loyaltyEnabled      Boolean  @default(false)
   loyaltyPointsPerBrl Float    @default(1)
@@ -249,6 +266,7 @@ model OptionGroup {
   productId      Int
   product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   nome           String
+  tipo           OptionGroupTipo @default(ADICIONAL)
   minSelections  Int             @default(0)
   maxSelections  Int             @default(1)
   priceMode      OptionPriceMode @default(SUM)
@@ -545,6 +563,19 @@ model Campaign {
   dataInicio      DateTime?
   dataFim         DateTime?
   createdAt       DateTime       @default(now())
+}
+
+model RestaurantTeamMember {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nome        String
+  email       String
+  password    String
+  cargo       TeamMemberRole @default(ATTENDANT)
+  ativo       Boolean        @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime       @default(now())
 }
 
 model AuditLog {

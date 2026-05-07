@@ -204,10 +204,12 @@ export class OrdersService {
               (sum, o) => sum + o.priceModifier,
               0,
             );
-          } else {
+          } else if (group.priceMode === OptionPriceMode.HIGHEST) {
             unitPrice += Math.max(
               ...resolvedOptions.map((o) => o.priceModifier),
             );
+          } else {
+            unitPrice = Math.max(...resolvedOptions.map((o) => o.priceModifier));
           }
 
           for (const opt of resolvedOptions) {

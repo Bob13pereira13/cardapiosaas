@@ -36,8 +36,14 @@ export class CustomersService {
   }
 
   async update(userId: number, customerId: number, data: { tags?: string[] }) {
-    return this.prisma.customer.updateMany({
+    const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, userId },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException('Cliente nÃ£o encontrado.');
+
+    return this.prisma.customer.update({
+      where: { id: customer.id },
       data,
     });
   }

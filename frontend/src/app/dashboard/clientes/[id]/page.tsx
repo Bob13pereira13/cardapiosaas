@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, CalendarDays, MapPin, MessageCircle, Phone, ReceiptText, Star, Tag, UserRound } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, MessageCircle, Phone, ReceiptText, Star, Tag, UserRound, X } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import { PageHeader } from '@/components/admin/PageHeader'
 import { StatusBadge } from '@/components/admin/StatusBadge'
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -209,6 +210,28 @@ export default function ClienteDetalhePage() {
     }
   }
 
+  async function saveTags(newTags: string[]) {
+    const token = getToken()
+    if (!token) return
+    setSavingTags(true)
+    try {
+      const response = await fetch(`${API_URL}/customers/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tags: newTags }),
+      })
+      if (handleUnauthorized(response)) return
+      if (response.ok) {
+        setTags(newTags)
+        toast.success('Tags atualizadas')
+      }
+    } catch {
+      toast.error('Erro ao salvar tags')
+    } finally {
+      setSavingTags(false)
+    }
+  }
+
   if (loading) return <div className="h-96 animate-pulse rounded-lg bg-zinc-100" />
 
   if (!customer) {
@@ -320,11 +343,31 @@ export default function ClienteDetalhePage() {
                 return (
                   <Badge key={t} variant="outline" className={`gap-1 text-xs ${meta.className}`}>
                     {meta.label}
+                    <button type="button" disabled={savingTags} onClick={() => saveTags(tags.filter((tag) => tag !== t))}>
+                      <X className="h-3 w-3" />
+                    </button>
                   </Badge>
                 )
               })}
             </div>
           )}
+          <div className="mt-3 max-w-xs">
+            <Select
+              disabled={savingTags}
+              onValueChange={(value) => {
+                if (!tags.includes(value)) void saveTags([...tags, value])
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Adicionar tag" />
+              </SelectTrigger>
+              <SelectContent>
+                {TAG_OPTIONS.filter((tag) => !tags.includes(tag.value)).map((tag) => (
+                  <SelectItem key={tag.value} value={tag.value}>{tag.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 

@@ -1,5 +1,5 @@
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { OptionPriceMode } from '@prisma/client';
+import { OptionGroupTipo, OptionPriceMode } from '@prisma/client';
 
 export class UpdateOptionGroupDto {
   @IsString() @IsOptional() nome?: string;
@@ -7,5 +7,6 @@ export class UpdateOptionGroupDto {
   @IsInt() @Min(1) @IsOptional() maxSelections?: number;
   @IsEnum(OptionPriceMode) @IsOptional() priceMode?: OptionPriceMode;
   @IsBoolean() @IsOptional() required?: boolean;
+  @IsEnum(OptionGroupTipo) @IsOptional() tipo?: OptionGroupTipo;
   @IsInt() @IsOptional() displayOrder?: number;
 }

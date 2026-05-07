@@ -6,7 +6,6 @@ import { CheckCircle2, Utensils } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { API_URL } from '@/lib/config'
 
 export default function SucessoPage() {
   const { orderId } = useParams<{ orderId: string }>()
@@ -21,7 +20,7 @@ export default function SucessoPage() {
 
   useEffect(() => {
     if (!orderId) return
-    void fetch(`${API_URL}/public/order/${orderId}`)
+    void fetch(`/public/order/${orderId}`)
       .then((r) => r.json())
       .then((order: { total?: number }) => {
         const value = order.total ?? 0

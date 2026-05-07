@@ -3,6 +3,7 @@
 import type { FormEvent } from 'react';
 import Image from 'next/image';
 import { useCallback, useEffect, useState, use, useRef } from 'react';
+import { Plus } from 'lucide-react';
 import { API_URL } from '@/lib/config';
 
 type Product = {
@@ -12,6 +13,20 @@ type Product = {
   preco: number;
   imagem?: string | null;
   optionGroups?: OptionGroup[];
+  disponivel?: boolean;
+  disponibilidadeAtiva?: boolean;
+  emDestaque?: boolean;
+  precoPromocional?: number | null;
+  tempoPreparo?: number | null;
+  sku?: string | null;
+  estoqueAtivo?: boolean;
+  estoque?: number | null;
+  displayOrder?: number;
+  disponibilidadeInicio?: string | null;
+  disponibilidadeFim?: string | null;
+  disponibilidadeDias?: string[];
+  categoryId?: number;
+  userId?: number;
 };
 
 type OptionGroup = {
@@ -20,7 +35,7 @@ type OptionGroup = {
   required: boolean;
   minSelections: number;
   maxSelections: number;
-  priceMode: 'SUM' | 'MAX';
+  priceMode: 'SUM' | 'HIGHEST' | 'FIXED_TOTAL';
   options: Array<{ id: number; nome: string; priceModifier: number; available: boolean }>;
 };
 
@@ -419,7 +434,8 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
         .filter((option) => selectedIds.includes(option.id))
         .map((option) => option.priceModifier);
       if (modifiers.length === 0) return price;
-      return price + (group.priceMode === 'MAX' ? Math.max(...modifiers) : modifiers.reduce((sum, value) => sum + value, 0));
+      if (group.priceMode === 'FIXED_TOTAL') return Math.max(...modifiers);
+      return price + (group.priceMode === 'HIGHEST' ? Math.max(...modifiers) : modifiers.reduce((sum, value) => sum + value, 0));
     }, product.preco);
   }
 
@@ -937,11 +953,26 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
                         optionGroups: [],
                         selectedOptions: [],
                         optionsLabel: combo.items.map((i) => i.product.nome).join(' + '),
+                        disponivel: true,
+                        disponibilidadeAtiva: false,
+                        emDestaque: false,
+                        precoPromocional: null,
+                        tempoPreparo: null,
+                        sku: null,
+                        estoqueAtivo: false,
+                        estoque: null,
+                        displayOrder: 0,
+                        disponibilidadeInicio: null,
+                        disponibilidadeFim: null,
+                        disponibilidadeDias: [],
+                        categoryId: 0,
+                        userId: 0,
                       })}
-                      className="text-white font-semibold text-sm px-4 py-2 rounded-full border-0 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 text-white transition-opacity hover:opacity-90"
                       style={{ backgroundColor: cor }}
+                      aria-label={`Adicionar ${combo.nome} ao carrinho`}
                     >
-                      Adicionar
+                      <Plus className="h-4 w-4" />
                     </button>
                   </div>
                 </div>

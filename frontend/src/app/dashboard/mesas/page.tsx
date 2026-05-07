@@ -128,7 +128,7 @@ export default function MesasPage() {
     } catch (e: any) { toast.error(e.message) }
   }
 
-  const downloadQr = async (tableId: number, tableNumero: number) => {
+  const openQr = async (tableId: number) => {
     try {
       const token = getToken()
       if (!token) return
@@ -138,14 +138,9 @@ export default function MesasPage() {
       if (!res.ok) { toast.error('Erro ao gerar QR Code'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `mesa-${tableNumero}.png`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch { toast.error('Erro ao baixar QR Code') }
+      window.open(url, '_blank')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch { toast.error('Erro ao abrir QR Code') }
   }
 
   const deleteTable = async (tableId: number) => {
@@ -186,8 +181,9 @@ export default function MesasPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">Mesa {table.numero}</CardTitle>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-zinc-950" onClick={(e) => { e.stopPropagation(); void downloadQr(table.id, table.numero) }}>
-                        <QrCode className="w-3.5 h-3.5" />
+                      <Button variant="outline" size="sm" className="h-8 gap-1" onClick={(e) => { e.stopPropagation(); void openQr(table.id) }}>
+                        <QrCode className="h-4 w-4" />
+                        QR
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteTable(table.id) }}>
                         <Trash2 className="w-3.5 h-3.5" />

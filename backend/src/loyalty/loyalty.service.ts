@@ -42,7 +42,13 @@ export class LoyaltyService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
-    return { balance: points?.points ?? 0, transactions: txs };
+    return {
+      balance: points?.points ?? 0,
+      points: points?.points ?? 0,
+      totalEarned: points?.totalEarned ?? 0,
+      totalSpent: points?.totalSpent ?? 0,
+      transactions: txs,
+    };
   }
 
   async awardPoints(userId: number, customerId: number, orderId: number, orderTotal: number) {
