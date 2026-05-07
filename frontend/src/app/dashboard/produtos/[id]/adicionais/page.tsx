@@ -68,7 +68,10 @@ export default function AdicionaisPage({ params }: { params: Promise<{ id: strin
     } catch { toast.error('Erro ao carregar grupos'); }
   }, [id]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   function onTabChange(tipo: OptionGroupTipo) {
     setActiveTab(tipo);

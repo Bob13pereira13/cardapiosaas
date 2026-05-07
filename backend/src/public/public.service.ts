@@ -26,9 +26,13 @@ export class PublicService {
       disponibilidadeFim: true,
       disponibilidadeDias: true,
       optionGroups: {
-        orderBy: { displayOrder: 'asc' as const },
+        orderBy: { ordem: 'asc' as const },
         include: {
-          options: { where: { available: true }, orderBy: { displayOrder: 'asc' as const } },
+          optionGroup: {
+            include: {
+              options: { where: { available: true }, orderBy: { displayOrder: 'asc' as const } },
+            },
+          },
         },
       },
     };
@@ -108,9 +112,16 @@ export class PublicService {
       return true;
     }
 
+    const normalizeProduct = (product: any) => ({
+      ...product,
+      optionGroups: (product.optionGroups ?? [])
+        .map((link: any) => link.optionGroup)
+        .filter((group: any) => group?.ativo !== false),
+    });
+
     const categoriesFiltered = allCategories.map((cat) => ({
       ...cat,
-      products: cat.products.filter((p: any) => isProductAvailableNow(p)),
+      products: cat.products.filter((p: any) => isProductAvailableNow(p)).map(normalizeProduct),
     }));
 
     const categories = categoriesFiltered.filter((c) => c.products.length > 0);
@@ -182,6 +193,7 @@ export class PublicService {
             unitPrice: true,
             itemTotal: true,
             itemNotes: true,
+            selectedOptions: true,
           },
         },
       },

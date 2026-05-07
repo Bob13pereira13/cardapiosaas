@@ -17,14 +17,23 @@ export class OptionsService {
 
   private async verifyGroup(productId: number, groupId: number, userId: number) {
     await this.verifyProduct(productId, userId);
-    const group = await this.prisma.optionGroup.findFirst({ where: { id: groupId, productId } });
+    const group = await this.prisma.optionGroup.findFirst({
+      where: {
+        id: groupId,
+        userId,
+        OR: [{ productId }, { productLinks: { some: { productId } } }],
+      },
+    });
     if (!group) throw new NotFoundException('Grupo de opções não encontrado.');
     return group;
   }
 
   findAll(productId: number, userId: number) {
     return this.prisma.optionGroup.findMany({
-      where: { productId, product: { userId } },
+      where: {
+        userId,
+        OR: [{ productId }, { productLinks: { some: { productId } } }],
+      },
       include: { options: { orderBy: { displayOrder: 'asc' } } },
       orderBy: { displayOrder: 'asc' },
     });
@@ -33,7 +42,12 @@ export class OptionsService {
   async createGroup(productId: number, userId: number, dto: CreateOptionGroupDto) {
     await this.verifyProduct(productId, userId);
     return this.prisma.optionGroup.create({
-      data: { productId, ...dto },
+      data: {
+        productId,
+        userId,
+        ...dto,
+        productLinks: { create: { productId, ordem: dto.displayOrder ?? 0 } },
+      },
       include: { options: true },
     });
   }

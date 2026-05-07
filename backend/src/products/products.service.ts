@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -56,7 +56,17 @@ export class ProductsService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where: { userId },
-        include: { category: true },
+        include: {
+          category: true,
+          optionGroups: {
+            orderBy: { ordem: 'asc' },
+            include: {
+              optionGroup: {
+                include: { options: { orderBy: { displayOrder: 'asc' } } },
+              },
+            },
+          },
+        },
         skip,
         take: limit,
         orderBy: [{ displayOrder: 'asc' }, { id: 'desc' }],
@@ -109,6 +119,32 @@ export class ProductsService {
     const result = await this.prisma.product.deleteMany({ where: { id, userId } });
     if (result.count > 0) void this.audit.log(userId, 'PRODUCT_DELETE', 'Product', id);
     return result;
+  }
+
+  async linkComplemento(productId: number, complementoId: number, userId: number, ordem = 0) {
+    await this.verifyProductAndComplement(productId, complementoId, userId);
+    return this.prisma.productComplement.upsert({
+      where: { productId_optionGroupId: { productId, optionGroupId: complementoId } },
+      create: { productId, optionGroupId: complementoId, ordem },
+      update: { ordem },
+    });
+  }
+
+  async unlinkComplemento(productId: number, complementoId: number, userId: number) {
+    await this.verifyProductAndComplement(productId, complementoId, userId);
+    await this.prisma.productComplement.deleteMany({
+      where: { productId, optionGroupId: complementoId },
+    });
+    return { ok: true };
+  }
+
+  private async verifyProductAndComplement(productId: number, complementoId: number, userId: number) {
+    const [product, complemento] = await Promise.all([
+      this.prisma.product.findFirst({ where: { id: productId, userId }, select: { id: true } }),
+      this.prisma.optionGroup.findFirst({ where: { id: complementoId, userId }, select: { id: true } }),
+    ]);
+    if (!product) throw new NotFoundException('Produto nao encontrado.');
+    if (!complemento) throw new NotFoundException('Complemento nao encontrado.');
   }
 
   async reorder(userId: number, ids: number[]) {

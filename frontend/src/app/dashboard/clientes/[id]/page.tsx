@@ -147,7 +147,10 @@ export default function ClienteDetalhePage() {
   }, [loadCustomer, loadLoyalty])
 
   useEffect(() => {
-    if (id) setNotes(localStorage.getItem(`customer-notes-${id}`) ?? '')
+    const timer = window.setTimeout(() => {
+      if (id) setNotes(localStorage.getItem(`customer-notes-${id}`) ?? '')
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [id])
 
   const stats = useMemo(() => {

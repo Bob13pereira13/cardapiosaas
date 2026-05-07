@@ -363,6 +363,15 @@ function KdsOrderCard({
             <p className="text-base font-bold text-zinc-950">
               {item.quantity}x {item.productNameSnapshot}
             </p>
+            {(item.selectedOptions ?? []).length > 0 && (
+              <div className="mt-2 space-y-1 text-sm text-zinc-600">
+                {(item.selectedOptions ?? []).map((option) => (
+                  <p key={`${item.id}-${option.optionGroupId}-${option.optionId}`}>
+                    {option.optionGroupName ? `${option.optionGroupName}: ` : ''}{option.nome}
+                  </p>
+                ))}
+              </div>
+            )}
             {item.itemNotes && <p className="mt-1 text-sm text-amber-700">{item.itemNotes}</p>}
           </div>
         ))}

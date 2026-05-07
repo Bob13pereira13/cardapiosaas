@@ -151,7 +151,13 @@ export class OrdersService {
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, userId: user.id, disponivel: true },
-      include: { optionGroups: { include: { options: true } } },
+      include: {
+        optionGroups: {
+          include: {
+            optionGroup: { include: { options: true } },
+          },
+        },
+      },
     });
 
     if (products.length !== productIds.length) {
@@ -168,10 +174,14 @@ export class OrdersService {
       let unitPrice = product.preco;
       const selectedOptionSnapshots: Array<{
         optionGroupId: number;
+        optionGroupName: string;
         optionId: number;
         nome: string;
         priceModifier: number;
       }> = [];
+      const productGroups = product.optionGroups
+        .map((link) => link.optionGroup)
+        .filter((group) => group.ativo);
 
       if (item.selectedOptions?.length) {
         const selectedByGroup = new Map<number, typeof item.selectedOptions>();
@@ -182,7 +192,7 @@ export class OrdersService {
         }
 
         for (const [groupId, sels] of selectedByGroup) {
-          const group = product.optionGroups.find((g) => g.id === groupId);
+          const group = productGroups.find((g) => g.id === groupId);
           if (!group)
             throw new BadRequestException(
               `Grupo de opções ${groupId} inválido.`,
@@ -215,11 +225,25 @@ export class OrdersService {
           for (const opt of resolvedOptions) {
             selectedOptionSnapshots.push({
               optionGroupId: group.id,
+              optionGroupName: group.nome,
               optionId: opt.id,
               nome: opt.nome,
               priceModifier: opt.priceModifier,
             });
           }
+        }
+      }
+
+      for (const group of productGroups) {
+        const selectedCount = selectedOptionSnapshots.filter((option) => option.optionGroupId === group.id).length;
+        if (group.required && selectedCount < Math.max(1, group.minSelections)) {
+          throw new BadRequestException(`Selecione ${group.nome}.`);
+        }
+        if (selectedCount < group.minSelections) {
+          throw new BadRequestException(`Selecione pelo menos ${group.minSelections} opÃ§Ãµes em ${group.nome}.`);
+        }
+        if (selectedCount > group.maxSelections) {
+          throw new BadRequestException(`Selecione no mÃ¡ximo ${group.maxSelections} opÃ§Ãµes em ${group.nome}.`);
         }
       }
 
@@ -475,7 +499,6 @@ export class OrdersService {
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, userId, disponivel: true },
-      include: { optionGroups: { include: { options: true } } },
     });
     if (products.length !== productIds.length) {
       throw new BadRequestException(

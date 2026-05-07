@@ -67,6 +67,36 @@ export class ProductsController {
   }
 
   @UseGuards(AuthGuard('jwt'))
+  @Post(':id/complementos/:complementoId')
+  linkComplemento(
+    @Param('id') id: string,
+    @Param('complementoId') complementoId: string,
+    @Request() req: AuthenticatedRequest,
+    @Body() body: { ordem?: number },
+  ) {
+    return this.productsService.linkComplemento(
+      Number(id),
+      Number(complementoId),
+      req.user.id,
+      body.ordem,
+    );
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Delete(':id/complementos/:complementoId')
+  unlinkComplemento(
+    @Param('id') id: string,
+    @Param('complementoId') complementoId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.productsService.unlinkComplemento(
+      Number(id),
+      Number(complementoId),
+      req.user.id,
+    );
+  }
+
+  @UseGuards(AuthGuard('jwt'))
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.productsService.delete(Number(id), req.user.id);

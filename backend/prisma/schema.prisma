@@ -197,6 +197,7 @@ model User {
 
   categories        Category[]
   products          Product[]
+  optionGroups      OptionGroup[]
   orders            Order[]
   coupons           Coupon[]
   customers         Customer[]
@@ -255,7 +256,8 @@ model Product {
   categoryId   Int?
   category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  optionGroups OptionGroup[]
+  optionGroups ProductComplement[]
+  legacyOptionGroups OptionGroup[]
   orderItems   OrderItem[]
   comboItems   ComboItem[]
   comandaItems ComandaItem[]
@@ -263,17 +265,25 @@ model Product {
 
 model OptionGroup {
   id             Int             @id @default(autoincrement())
-  productId      Int
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId      Int?
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId         Int
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   nome           String
+  descricao      String?
   tipo           OptionGroupTipo @default(ADICIONAL)
   minSelections  Int             @default(0)
   maxSelections  Int             @default(1)
   priceMode      OptionPriceMode @default(SUM)
   required       Boolean         @default(false)
+  ativo          Boolean         @default(true)
   displayOrder   Int             @default(0)
+  productLinks   ProductComplement[]
   options        Option[]
   createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([userId, ativo])
 }
 
 model Option {
@@ -281,9 +291,25 @@ model Option {
   optionGroupId   Int
   optionGroup     OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
   nome            String
+  descricao       String?
   priceModifier   Float       @default(0)
+  imagem          String?
   available       Boolean     @default(true)
+  estoque         Int?
   displayOrder    Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model ProductComplement {
+  productId     Int
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionGroupId Int
+  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  ordem         Int         @default(0)
+
+  @@id([productId, optionGroupId])
+  @@index([optionGroupId])
 }
 
 model Order {

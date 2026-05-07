@@ -26,6 +26,13 @@ export type OrderItem = {
   unitPrice: number
   itemTotal: number
   itemNotes?: string | null
+  selectedOptions?: Array<{
+    optionGroupId: number
+    optionGroupName?: string
+    optionId: number
+    nome: string
+    priceModifier: number
+  }> | null
 }
 
 export type OrderHistory = {

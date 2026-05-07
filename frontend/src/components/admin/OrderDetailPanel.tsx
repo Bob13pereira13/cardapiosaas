@@ -92,6 +92,16 @@ export function OrderDetailPanel({ order, updating, onStatusChange }: Props) {
                 {item.itemNotes && (
                   <p className="mt-1 text-xs text-zinc-500">{item.itemNotes}</p>
                 )}
+                {(item.selectedOptions ?? []).length > 0 && (
+                  <div className="mt-2 space-y-1 text-xs text-zinc-500">
+                    {(item.selectedOptions ?? []).map((option) => (
+                      <p key={`${item.id}-${option.optionGroupId}-${option.optionId}`}>
+                        {option.optionGroupName ? `${option.optionGroupName}: ` : ''}{option.nome}
+                        {option.priceModifier > 0 ? ` (+${formatCurrency(option.priceModifier)})` : ''}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
               <p className="shrink-0 text-sm font-semibold text-zinc-950">
                 {formatCurrency(item.itemTotal)}

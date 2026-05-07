@@ -3,6 +3,7 @@ import { SubscriptionStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AsaasBillingService } from './asaas-billing.service';
 import { BillingService } from './billing.service';
+import { MailService } from '../mail/mail.service';
 
 describe('BillingService', () => {
   const prisma = {
@@ -16,6 +17,11 @@ describe('BillingService', () => {
     createCustomer: jest.fn(),
     createSubscription: jest.fn(),
   };
+  const mail = {
+    sendSubscriptionConfirmed: jest.fn().mockResolvedValue(undefined),
+    sendSubscriptionCanceled: jest.fn().mockResolvedValue(undefined),
+    sendPaymentFailed: jest.fn().mockResolvedValue(undefined),
+  };
 
   let service: BillingService;
   const originalWebhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
@@ -25,6 +31,7 @@ describe('BillingService', () => {
     service = new BillingService(
       prisma as unknown as PrismaService,
       asaas as unknown as AsaasBillingService,
+      mail as unknown as MailService,
     );
   });
 

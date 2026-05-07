@@ -69,6 +69,7 @@ const navSections: NavSection[] = [
     label: 'Catalogo',
     items: [
       { href: '/dashboard/produtos', label: 'Produtos', icon: Package },
+      { href: '/dashboard/catalogo', label: 'Catalogo', icon: LayoutGrid },
       { href: '/dashboard/categorias', label: 'Categorias', icon: LayoutGrid },
       { href: '/dashboard/combos', label: 'Combos', icon: UtensilsCrossed },
       { href: '/dashboard/cupons', label: 'Cupons', icon: Ticket },

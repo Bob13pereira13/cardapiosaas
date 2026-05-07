@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -12,6 +13,10 @@ describe('UsersService', () => {
         {
           provide: PrismaService,
           useValue: {},
+        },
+        {
+          provide: MailService,
+          useValue: { sendWelcome: jest.fn() },
         },
       ],
     }).compile();
