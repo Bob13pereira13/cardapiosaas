@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Minus, Plus, Trash2, X } from 'lucide-react'
+import { Minus, Plus, QrCode, Trash2, X } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
@@ -128,6 +128,26 @@ export default function MesasPage() {
     } catch (e: any) { toast.error(e.message) }
   }
 
+  const downloadQr = async (tableId: number, tableNumero: number) => {
+    try {
+      const token = getToken()
+      if (!token) return
+      const res = await fetch(`${API_URL}/tables/${tableId}/qrcode`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) { toast.error('Erro ao gerar QR Code'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mesa-${tableNumero}.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch { toast.error('Erro ao baixar QR Code') }
+  }
+
   const deleteTable = async (tableId: number) => {
     if (!confirm('Excluir mesa?')) return
     try {
@@ -165,9 +185,14 @@ export default function MesasPage() {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">Mesa {table.numero}</CardTitle>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteTable(table.id) }}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-zinc-950" onClick={(e) => { e.stopPropagation(); void downloadQr(table.id, table.numero) }}>
+                        <QrCode className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteTable(table.id) }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
                   {table.nome && <p className="text-xs text-muted-foreground">{table.nome}</p>}
                 </CardHeader>

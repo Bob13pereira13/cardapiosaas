@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Header, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CustomersService } from './customers.service';
 
@@ -24,6 +24,15 @@ export class CustomersController {
   @Header('Content-Disposition', 'attachment; filename=clientes.csv')
   export(@Request() req: AuthenticatedRequest) {
     return this.customers.exportCsv(req.user.id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+    @Body() body: { tags?: string[] },
+  ) {
+    return this.customers.update(req.user.id, Number(id), body);
   }
 
   @Get(':id/orders')

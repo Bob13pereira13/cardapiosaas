@@ -926,6 +926,23 @@ export default function CardapioPage({ params }: { params: Promise<{ slug: strin
                   </div>
                   <div className="flex items-center justify-between mt-3">
                     <span className="text-base font-bold" style={{ color: cor }}>{formatarPreco(combo.preco)}</span>
+                    <button
+                      type="button"
+                      onClick={() => adicionarAoCarrinho({
+                        id: combo.id * -1,
+                        nome: combo.nome,
+                        preco: combo.preco,
+                        imagem: combo.imagem ?? null,
+                        descricao: combo.descricao ?? null,
+                        optionGroups: [],
+                        selectedOptions: [],
+                        optionsLabel: combo.items.map((i) => i.product.nome).join(' + '),
+                      })}
+                      className="text-white font-semibold text-sm px-4 py-2 rounded-full border-0 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+                      style={{ backgroundColor: cor }}
+                    >
+                      Adicionar
+                    </button>
                   </div>
                 </div>
               </article>

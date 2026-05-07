@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, CalendarDays, MapPin, MessageCircle, Phone, ReceiptText, UserRound } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, MessageCircle, Phone, ReceiptText, Star, Tag, UserRound } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import { PageHeader } from '@/components/admin/PageHeader'
 import { StatusBadge } from '@/components/admin/StatusBadge'
@@ -47,10 +47,32 @@ type CustomerHistory = {
   name: string
   phone: string
   document?: string | null
+  tags?: string[]
   createdAt?: string
   ordersCount: number
   totalSpent: number
   orders: CustomerOrder[]
+}
+
+type LoyaltyData = {
+  points: number
+  totalEarned: number
+  totalSpent: number
+} | null
+
+const TAG_OPTIONS = [
+  { value: 'novo', label: 'Novo', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'recorrente', label: 'Recorrente', className: 'bg-green-100 text-green-700 border-green-200' },
+  { value: 'inativo', label: 'Inativo', className: 'bg-zinc-100 text-zinc-600 border-zinc-200' },
+  { value: 'alto valor', label: 'Alto valor', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+]
+
+function getTagMeta(value: string) {
+  return TAG_OPTIONS.find((t) => t.value === value) ?? {
+    value,
+    label: value,
+    className: 'bg-zinc-100 text-zinc-600 border-zinc-200',
+  }
 }
 
 function formatDate(date?: string | null) {
@@ -75,6 +97,9 @@ export default function ClienteDetalhePage() {
   const [customer, setCustomer] = useState<CustomerHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [savingTags, setSavingTags] = useState(false)
+  const [loyalty, setLoyalty] = useState<LoyaltyData>(null)
 
   const loadCustomer = useCallback(async () => {
     const token = getToken()
@@ -88,21 +113,37 @@ export default function ClienteDetalhePage() {
     })
     if (handleUnauthorized(response)) return
     if (response.ok) {
-      setCustomer((await response.json()) as CustomerHistory)
+      const data = (await response.json()) as CustomerHistory
+      setCustomer(data)
+      setTags(data.tags ?? [])
     } else {
       setCustomer(null)
     }
   }, [id, router])
 
+  const loadLoyalty = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+    try {
+      const response = await fetch(`${API_URL}/loyalty/customers/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        setLoyalty((await response.json()) as LoyaltyData)
+      }
+    } catch {
+      // loyalty is optional
+    }
+  }, [id])
+
   useEffect(() => {
     async function init() {
       setLoading(true)
-      await loadCustomer()
+      await Promise.all([loadCustomer(), loadLoyalty()])
       setLoading(false)
     }
-
     void init()
-  }, [loadCustomer])
+  }, [loadCustomer, loadLoyalty])
 
   useEffect(() => {
     if (id) setNotes(localStorage.getItem(`customer-notes-${id}`) ?? '')
@@ -143,6 +184,29 @@ export default function ClienteDetalhePage() {
   function saveNotes() {
     localStorage.setItem(`customer-notes-${id}`, notes)
     toast.success('Observações salvas')
+  }
+
+  async function toggleTag(tag: string) {
+    const token = getToken()
+    if (!token) return
+    const newTags = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]
+    setSavingTags(true)
+    try {
+      const response = await fetch(`${API_URL}/customers/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tags: newTags }),
+      })
+      if (handleUnauthorized(response)) return
+      if (response.ok) {
+        setTags(newTags)
+        toast.success('Tags atualizadas')
+      }
+    } catch {
+      toast.error('Erro ao salvar tags')
+    } finally {
+      setSavingTags(false)
+    }
   }
 
   if (loading) return <div className="h-96 animate-pulse rounded-lg bg-zinc-100" />
@@ -219,8 +283,70 @@ export default function ClienteDetalhePage() {
         </Card>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Card>
+      {/* Tags */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Tag className="h-5 w-5 text-brand-red" />
+            Tags
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {TAG_OPTIONS.map((tag) => {
+              const active = tags.includes(tag.value)
+              return (
+                <button
+                  key={tag.value}
+                  type="button"
+                  disabled={savingTags}
+                  onClick={() => toggleTag(tag.value)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 ${
+                    active
+                      ? tag.className
+                      : 'border-zinc-200 bg-white text-zinc-400 hover:border-zinc-300'
+                  }`}
+                >
+                  {active && <span>✓</span>}
+                  {tag.label}
+                </button>
+              )
+            })}
+          </div>
+          {tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {tags.map((t) => {
+                const meta = getTagMeta(t)
+                return (
+                  <Badge key={t} variant="outline" className={`gap-1 text-xs ${meta.className}`}>
+                    {meta.label}
+                  </Badge>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Loyalty + Notes + Addresses */}
+      <div className="grid gap-5 xl:grid-cols-3">
+        {loyalty !== null && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Star className="h-5 w-5 text-brand-red" />
+                Fidelidade
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-3">
+              <StatCard label="Saldo" value={String(loyalty?.points ?? 0)} />
+              <StatCard label="Emitidos" value={String(loyalty?.totalEarned ?? 0)} />
+              <StatCard label="Resgatados" value={String(loyalty?.totalSpent ?? 0)} />
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className={loyalty !== null ? '' : 'xl:col-span-2'}>
           <CardHeader>
             <CardTitle className="text-lg">Observações internas</CardTitle>
           </CardHeader>

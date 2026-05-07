@@ -35,6 +35,13 @@ export class CustomersService {
     }));
   }
 
+  async update(userId: number, customerId: number, data: { tags?: string[] }) {
+    return this.prisma.customer.updateMany({
+      where: { id: customerId, userId },
+      data,
+    });
+  }
+
   async findOrders(userId: number, customerId: number) {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, userId },
@@ -43,6 +50,7 @@ export class CustomersService {
         name: true,
         phone: true,
         document: true,
+        tags: true,
       },
     });
 
@@ -59,6 +67,7 @@ export class CustomersService {
       orders,
       ordersCount: orders.length,
       totalSpent: orders.reduce((sum, order) => sum + order.total, 0),
+      tags: customer.tags,
     };
   }
 

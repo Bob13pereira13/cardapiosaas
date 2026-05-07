@@ -6,6 +6,7 @@ import { CheckCircle2, Utensils } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { API_URL } from '@/lib/config'
 
 export default function SucessoPage() {
   const { orderId } = useParams<{ orderId: string }>()
@@ -17,6 +18,33 @@ export default function SucessoPage() {
     const timeout = window.setTimeout(() => setBouncing(false), 1000)
     return () => window.clearTimeout(timeout)
   }, [])
+
+  useEffect(() => {
+    if (!orderId) return
+    void fetch(`${API_URL}/public/order/${orderId}`)
+      .then((r) => r.json())
+      .then((order: { total?: number }) => {
+        const value = order.total ?? 0
+        if (typeof window !== 'undefined') {
+          if ((window as unknown as { fbq?: (...a: unknown[]) => void }).fbq) {
+            (window as unknown as { fbq: (...a: unknown[]) => void }).fbq('track', 'Purchase', {
+              value,
+              currency: 'BRL',
+              content_ids: [orderId],
+              content_type: 'product',
+            })
+          }
+          if ((window as unknown as { gtag?: (...a: unknown[]) => void }).gtag) {
+            (window as unknown as { gtag: (...a: unknown[]) => void }).gtag('event', 'purchase', {
+              transaction_id: orderId,
+              value,
+              currency: 'BRL',
+            })
+          }
+        }
+      })
+      .catch(() => undefined)
+  }, [orderId])
 
   return (
     <div className="min-h-screen bg-zinc-50">

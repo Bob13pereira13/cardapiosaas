@@ -109,6 +109,16 @@ export class TablesService {
     await this.prisma.comanda.update({ where: { id: comandaId }, data: { total } });
   }
 
+  async getQrCodeUrl(userId: number, tableId: number): Promise<string> {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, userId },
+      include: { user: { select: { slug: true } } },
+    });
+    if (!table) throw new NotFoundException('Mesa não encontrada');
+    const appUrl = process.env.APP_URL ?? 'https://cardapiopedeai.com.br';
+    return `${appUrl}/cardapio/${table.user.slug}?mesa=${table.numero}`;
+  }
+
   private async ensureOwner(userId: number, tableId: number) {
     const table = await this.prisma.table.findFirst({ where: { id: tableId, userId } });
     if (!table) throw new NotFoundException('Mesa nao encontrada.');

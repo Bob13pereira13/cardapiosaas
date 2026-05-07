@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
+import * as QRCode from 'qrcode';
 import { AuthGuard } from '@nestjs/passport';
 import { TablesService } from './tables.service';
 
@@ -13,6 +15,18 @@ export class TablesController {
   @Post() create(@Request() req: AuthenticatedRequest, @Body() body: { numero: number; nome?: string; capacidade?: number }) { return this.tables.create(req.user.id, body); }
   @Patch(':id') update(@Request() req: AuthenticatedRequest, @Param('id') id: string, @Body() body: { numero?: number; nome?: string; capacidade?: number; ativa?: boolean }) { return this.tables.update(req.user.id, Number(id), body); }
   @Delete(':id') remove(@Request() req: AuthenticatedRequest, @Param('id') id: string) { return this.tables.remove(req.user.id, Number(id)); }
+
+  @Get(':id/qrcode')
+  async getQrCode(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const url = await this.tables.getQrCodeUrl(req.user.id, Number(id));
+    const qr = await QRCode.toBuffer(url, { width: 400 });
+    res.setHeader('Content-Type', 'image/png');
+    res.end(qr);
+  }
 
   @Get(':id/comanda') getComanda(@Request() req: AuthenticatedRequest, @Param('id') id: string) { return this.tables.getActiveComanda(req.user.id, Number(id)); }
   @Post(':id/comanda') openComanda(@Request() req: AuthenticatedRequest, @Param('id') id: string) { return this.tables.openComanda(req.user.id, Number(id)); }
