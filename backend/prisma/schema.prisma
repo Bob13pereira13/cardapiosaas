@@ -82,19 +82,6 @@ enum TabPaymentStatus {
   REFUNDED
 }
 
-enum CampaignTipo {
-  CUPOM
-  LINK
-  RETORNO
-}
-
-enum CampaignStatus {
-  RASCUNHO
-  ATIVA
-  PAUSADA
-  ENCERRADA
-}
-
 enum OrderOrigin {
   WEBSITE
   MANUAL
@@ -405,7 +392,6 @@ model Coupon {
   validUntil        DateTime?
   active            Boolean    @default(true)
   orders            Order[]
-  campaigns         Campaign[]
   createdAt         DateTime   @default(now())
 
   @@unique([restaurantId, code])
@@ -512,23 +498,6 @@ model ComboItem {
   productId  Int
   product    Product @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantidade Int     @default(1)
-}
-
-model Campaign {
-  id             Int            @id @default(autoincrement())
-  restaurantId   Int
-  restaurant     Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  nome           String
-  tipo           CampaignTipo   @default(CUPOM)
-  status         CampaignStatus @default(RASCUNHO)
-  couponId       Int?
-  coupon         Coupon?        @relation(fields: [couponId], references: [id])
-  descricao      String?
-  metaClicks     Int            @default(0)
-  metaConversoes Int            @default(0)
-  dataInicio     DateTime?
-  dataFim        DateTime?
-  createdAt      DateTime       @default(now())
 }
 
 model AuditLog {
@@ -684,7 +653,6 @@ model Restaurant {
   customerAuths    CustomerAuth[]
   tables           Table[]
   combos           Combo[]
-  campaigns        Campaign[]
   auditLogs        AuditLog[]
   loyaltyPoints    LoyaltyPoints[]
   loyaltyTx        LoyaltyTransaction[]

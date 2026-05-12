@@ -617,15 +617,6 @@ export class OrdersService {
           }
         }
 
-        if (order.couponId) {
-          this.prisma.campaign
-            .updateMany({
-              where: { couponId: order.couponId, restaurantId: restaurant.id },
-              data: { metaConversoes: { increment: 1 } },
-            })
-            .catch(() => undefined);
-        }
-
         this.gateway.emitNewOrder(restaurant.id, order);
         return order;
       } catch (error: unknown) {

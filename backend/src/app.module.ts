@@ -26,7 +26,6 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { NpsModule } from './nps/nps.module';
 import { TablesModule } from './tables/tables.module';
 import { CombosModule } from './combos/combos.module';
-import { CampaignsModule } from './campaigns/campaigns.module';
 import { AuditModule } from './audit/audit.module';
 import { TeamModule } from './team/team.module';
 import { ComplementosModule } from './complementos/complementos.module';
@@ -68,7 +67,6 @@ import { FiadoModule } from './fiado/fiado.module';
     NpsModule,
     TablesModule,
     CombosModule,
-    CampaignsModule,
     AuditModule,
     TeamModule,
     ComplementosModule,
