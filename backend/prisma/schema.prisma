@@ -392,6 +392,9 @@ model Customer {
   fiadoTransactions FiadoTransaction[]
   campaignMessages  CampaignMessage[]
 
+  dataNascimento      DateTime?
+  firstOrderTriggered Boolean   @default(false)
+
   @@unique([restaurantId, phone])
   @@index([restaurantId, name])
   @@index([restaurantId, lastOrderAt])
@@ -724,6 +727,7 @@ model Restaurant {
   fiadoTransactions       FiadoTransaction[]
   audiences               Audience[]
   campaigns               Campaign[]
+  triggerSubscriptions    TriggerSubscription[]
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -1123,7 +1127,8 @@ model Campaign {
   createdByAccountId Int
   createdBy          Account @relation("CampaignCreator", fields: [createdByAccountId], references: [id], onDelete: Restrict)
 
-  dispatches CampaignDispatch[]
+  dispatches           CampaignDispatch[]
+  triggerSubscriptions TriggerSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1194,4 +1199,31 @@ model CampaignMessage {
   @@index([couponId])
   @@index([zapiMessageId])
   @@index([orderId])
+}
+
+enum TriggerType {
+  BIRTHDAY
+  NO_ORDER_X_DAYS
+  FIRST_ORDER_ANNIVERSARY
+  FIRST_ORDER_PLACED
+  FIADO_LIMIT_NEAR
+}
+
+model TriggerSubscription {
+  id            Int         @id @default(autoincrement())
+  restaurantId  Int
+  restaurant    Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  campaignId    Int
+  campaign      Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  triggerType   TriggerType
+  triggerConfig Json        @default("{}")
+  ativo         Boolean     @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, triggerType])
+  @@index([restaurantId])
+  @@index([campaignId])
+  @@index([ativo])
 }
