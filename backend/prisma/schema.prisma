@@ -1144,6 +1144,7 @@ model CampaignDispatch {
   sentCount      Int            @default(0)
   failedCount    Int            @default(0)
   deliveredCount Int            @default(0)
+  readCount      Int            @default(0)
 
   scheduledAt  DateTime
   startedAt    DateTime?
