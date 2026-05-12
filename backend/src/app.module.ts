@@ -25,7 +25,6 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { NpsModule } from './nps/nps.module';
 import { TablesModule } from './tables/tables.module';
-import { AgendaModule } from './agenda/agenda.module';
 import { CombosModule } from './combos/combos.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { AuditModule } from './audit/audit.module';
@@ -68,7 +67,6 @@ import { FiadoModule } from './fiado/fiado.module';
     IntegrationsModule,
     NpsModule,
     TablesModule,
-    AgendaModule,
     CombosModule,
     CampaignsModule,
     AuditModule,
