@@ -551,6 +551,14 @@ export class OrdersService {
             include: { items: true },
           });
 
+          await tx.$executeRaw`
+            UPDATE "Customer"
+            SET
+              "firstOrderAt" = COALESCE("firstOrderAt", ${order.createdAt}),
+              "totalSpent"   = "totalSpent" + ${order.total}
+            WHERE "id" = ${customer.id}
+          `;
+
           if (dto.paymentMethod !== PaymentMethod.ONLINE_PIX) {
             await tx.payment.create({
               data: {
@@ -869,6 +877,14 @@ export class OrdersService {
             include: { items: true },
           });
 
+          await tx.$executeRaw`
+            UPDATE "Customer"
+            SET
+              "firstOrderAt" = COALESCE("firstOrderAt", ${order.createdAt}),
+              "totalSpent"   = "totalSpent" + ${order.total}
+            WHERE "id" = ${customer.id}
+          `;
+
           await tx.payment.create({
             data: {
               restaurantId,
@@ -971,20 +987,48 @@ export class OrdersService {
     if (newStatus === OrderStatus.DELIVERED) timestamps.deliveredAt = now;
     if (newStatus === OrderStatus.CANCELED) timestamps.canceledAt = now;
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.order.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
         where: { id },
         data: { orderStatus: newStatus, ...timestamps },
         include: { items: true },
-      }),
-      this.prisma.orderStatusHistory.create({
+      });
+      await tx.orderStatusHistory.create({
         data: {
           orderId: id,
           fromStatus: order.orderStatus,
           toStatus: newStatus,
         },
-      }),
-    ]);
+      });
+
+      // Hook B: transitioning TO CANCELED → decrement totalSpent
+      if (
+        newStatus === OrderStatus.CANCELED &&
+        order.orderStatus !== OrderStatus.CANCELED &&
+        order.customerId
+      ) {
+        await tx.$executeRaw`
+          UPDATE "Customer"
+          SET "totalSpent" = GREATEST("totalSpent" - ${order.total}, 0)
+          WHERE "id" = ${order.customerId}
+        `;
+      }
+
+      // Hook C: transitioning FROM CANCELED → re-increment totalSpent
+      if (
+        newStatus !== OrderStatus.CANCELED &&
+        order.orderStatus === OrderStatus.CANCELED &&
+        order.customerId
+      ) {
+        await tx.$executeRaw`
+          UPDATE "Customer"
+          SET "totalSpent" = "totalSpent" + ${order.total}
+          WHERE "id" = ${order.customerId}
+        `;
+      }
+
+      return updatedOrder;
+    });
 
     this.gateway.emitStatusChanged(restaurantId, id, newStatus);
     void this.audit.log(
