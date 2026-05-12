@@ -385,7 +385,7 @@ export class OrdersService {
     let zoneMetadata: { zoneName: string; tempoEstimadoMin: number } | null =
       null;
 
-    const isOwnSource = !dto.source || dto.source === 'OWN';
+    const isOwnSource = dto.origin !== OrderOrigin.IFOOD;
     if (
       dto.deliveryType === DeliveryType.DELIVERY &&
       dto.deliveryCep &&

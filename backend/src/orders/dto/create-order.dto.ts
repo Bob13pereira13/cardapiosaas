@@ -11,8 +11,16 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { OrderSource } from '@prisma/client';
-import { DeliveryType, PaymentMethod } from '@prisma/client';
+import { DeliveryType, OrderOrigin, PaymentMethod } from '@prisma/client';
+
+// WHATSAPP_BOT excluído intencionalmente — requer integração com bot real.
+// TODO: Permitir WHATSAPP_BOT quando integração com bot estiver real (ver BLOCOS_INVENTARIO.md B.2)
+const ALLOWED_ORDER_ORIGINS = [
+  OrderOrigin.WEBSITE,
+  OrderOrigin.MANUAL,
+  OrderOrigin.IFOOD,
+  OrderOrigin.OTHER,
+] as const;
 
 export class SelectedOptionDto {
   @IsInt()
@@ -117,8 +125,11 @@ export class CreateOrderDto {
   deliveryCep?: string;
 
   @IsOptional()
-  @IsEnum(OrderSource)
-  source?: OrderSource;
+  @IsEnum(ALLOWED_ORDER_ORIGINS, {
+    message:
+      'origin inválido. WHATSAPP_BOT requer integração com bot — use WEBSITE, MANUAL, IFOOD ou OTHER.',
+  })
+  origin?: OrderOrigin;
 
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)

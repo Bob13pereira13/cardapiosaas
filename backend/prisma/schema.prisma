@@ -71,9 +71,7 @@ enum TabPaymentMethod {
   DINHEIRO
   CARTAO_DEBITO
   CARTAO_CREDITO
-  VOUCHER_REFEICAO
   FIADO
-  CORTESIA
 }
 
 // Status de Payment dedicado (CONFIRMED ao invés de PAID do enum legado)
@@ -115,8 +113,6 @@ enum OrderOrigin {
   MANUAL
   WHATSAPP_BOT
   IFOOD
-  RAPPI_99
-  UBER_EATS
   OTHER
 }
 
@@ -135,13 +131,6 @@ enum DeliveryAttemptStatus {
   FAILED
   RETRY_SCHEDULED
   CANCELED
-}
-
-enum OrderSource {
-  OWN
-  IFOOD
-  NINETYNINEFOOD
-  KEETA
 }
 
 enum MarketplaceProvider {
@@ -327,7 +316,6 @@ model Order {
   externalOrderId String?
   externalChannel String?
 
-  source                   OrderSource             @default(OWN)
   marketplaceIntegrationId Int?
   marketplaceIntegration   MarketplaceIntegration? @relation(fields: [marketplaceIntegrationId], references: [id], onDelete: SetNull)
 
@@ -354,7 +342,6 @@ model Order {
   @@index([customerId])
   @@index([restaurantId, origin])
   @@index([tabId])
-  @@index([source, restaurantId])
   @@index([externalOrderId])
 }
 
