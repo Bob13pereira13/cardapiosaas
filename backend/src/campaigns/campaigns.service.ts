@@ -15,6 +15,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
+import { nextRunFromCron } from './scheduling/cron-rule.util';
 
 @Injectable()
 export class CampaignsService {
@@ -91,6 +92,19 @@ export class CampaignsService {
       if (!coupon) throw new NotFoundException('Cupom não encontrado.');
     }
 
+    // Determine initial status and scheduledAt based on agendamentoTipo
+    let initialStatus: CampaignStatus = CampaignStatus.DRAFT;
+    let resolvedScheduledAt: Date | null = dto.scheduledAt
+      ? new Date(dto.scheduledAt)
+      : null;
+
+    if (dto.agendamentoTipo === AgendamentoTipo.SCHEDULED) {
+      initialStatus = CampaignStatus.SCHEDULED;
+    } else if (dto.agendamentoTipo === AgendamentoTipo.RECURRING) {
+      initialStatus = CampaignStatus.SCHEDULED;
+      resolvedScheduledAt = nextRunFromCron(dto.recurringCron!, new Date());
+    }
+
     const campaign = await this.prisma.campaign.create({
       data: {
         restaurantId,
@@ -98,9 +112,9 @@ export class CampaignsService {
         descricao: dto.descricao,
         tipo: dto.tipo,
         channel: dto.channel ?? CampaignChannel.WHATSAPP,
-        status: CampaignStatus.DRAFT,
+        status: initialStatus,
         agendamentoTipo: dto.agendamentoTipo,
-        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        scheduledAt: resolvedScheduledAt,
         recurringCron: dto.recurringCron ?? null,
         recurringEndsAt: dto.recurringEndsAt
           ? new Date(dto.recurringEndsAt)
@@ -227,6 +241,29 @@ export class CampaignsService {
       'Campaign',
       id,
       { nome: updated.nome },
+      accountId,
+    );
+    return updated;
+  }
+
+  async cancelSchedule(id: number, restaurantId: number, accountId: number) {
+    const campaign = await this.findOne(id, restaurantId);
+    if (campaign.status !== CampaignStatus.SCHEDULED) {
+      throw new BadRequestException(
+        'Apenas campanhas SCHEDULED podem ser canceladas. Status atual: ' +
+          campaign.status,
+      );
+    }
+    const updated = await this.prisma.campaign.update({
+      where: { id },
+      data: { status: CampaignStatus.CANCELED },
+    });
+    void this.audit.log(
+      restaurantId,
+      'CAMPAIGN_CANCEL_SCHEDULE',
+      'Campaign',
+      id,
+      { status: 'CANCELED' },
       accountId,
     );
     return updated;

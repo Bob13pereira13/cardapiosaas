@@ -19,6 +19,7 @@ import { CampaignStatus, MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { CampaignsService } from './campaigns.service';
 import { DispatchService } from './dispatch/dispatch.service';
+import { CampaignSchedulerService } from './scheduling/campaign-scheduler.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 
@@ -51,6 +52,7 @@ export class CampaignsController {
   constructor(
     private readonly service: CampaignsService,
     private readonly dispatch: DispatchService,
+    private readonly scheduler: CampaignSchedulerService,
   ) {}
 
   @Post()
@@ -127,6 +129,28 @@ export class CampaignsController {
       req.user.activeRestaurantId,
       req.user.accountId,
     );
+  }
+
+  @Patch(':id/cancel-schedule')
+  cancelSchedule(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    requireWriteRole(req);
+    return this.service.cancelSchedule(
+      id,
+      req.user.activeRestaurantId,
+      req.user.accountId,
+    );
+  }
+
+  // Debug/testing endpoint — triggers the @Cron scheduler synchronously.
+  // In production only the @Cron decorator calls processScheduledCampaigns().
+  @Post('scheduler/run')
+  @HttpCode(HttpStatus.OK)
+  runScheduler(@Request() req: AuthenticatedRequest) {
+    requireWriteRole(req);
+    return this.scheduler.processScheduledCampaigns();
   }
 
   @Get(':id/messages')

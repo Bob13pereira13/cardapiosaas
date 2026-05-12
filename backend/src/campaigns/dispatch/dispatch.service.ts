@@ -308,6 +308,150 @@ export class DispatchService {
     }
   }
 
+  async sendForScheduled(campaignId: number): Promise<{
+    dispatchId: number;
+    totalMessages: number;
+    sentCount: number;
+    failedCount: number;
+    skippedNoPhone: number;
+  }> {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id: campaignId },
+      include: {
+        audience: { select: { id: true, filtros: true } },
+        coupon: { select: { id: true, code: true } },
+        restaurant: { select: { nome: true, slug: true } },
+      },
+    });
+
+    if (!campaign) throw new NotFoundException('Campanha não encontrada.');
+
+    if (!campaign.audienceId || !campaign.audience) {
+      this.logger.warn(
+        `Campaign ${campaignId} has no audience — skipping scheduled dispatch.`,
+      );
+      return {
+        dispatchId: 0,
+        totalMessages: 0,
+        sentCount: 0,
+        failedCount: 0,
+        skippedNoPhone: 0,
+      };
+    }
+
+    if (campaign.tipo === CampaignTipo.CUPOM_GENERICO) {
+      const coupon = await this.prisma.coupon.findFirst({
+        where: {
+          id: campaign.couponId!,
+          restaurantId: campaign.restaurantId,
+          active: true,
+        },
+      });
+      if (!coupon) {
+        this.logger.warn(
+          `Campaign ${campaignId}: coupon ${campaign.couponId} inactive — skipping.`,
+        );
+        await this.prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: CampaignStatus.COMPLETED },
+        });
+        return {
+          dispatchId: 0,
+          totalMessages: 0,
+          sentCount: 0,
+          failedCount: 0,
+          skippedNoPhone: 0,
+        };
+      }
+    }
+
+    const dispatch = await this.prisma.$transaction(async (tx) => {
+      const d = await tx.campaignDispatch.create({
+        data: {
+          campaignId,
+          status: DispatchStatus.SCHEDULED,
+          scheduledAt: new Date(),
+        },
+      });
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: { status: CampaignStatus.SENDING },
+      });
+      return d;
+    });
+
+    const filtros = campaign.audience.filtros as FilterDSL;
+    const where = buildCustomerWhere(filtros, campaign.restaurantId);
+    const customers = (await this.prisma.customer.findMany({
+      where,
+      select: { id: true, name: true, phone: true },
+    })) as CustomerRow[];
+
+    await this.prisma.campaignDispatch.update({
+      where: { id: dispatch.id },
+      data: {
+        totalMessages: customers.length,
+        startedAt: new Date(),
+        status: DispatchStatus.RUNNING,
+      },
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < customers.length; i += 50) {
+      const batch = customers.slice(i, i + 50);
+      for (const customer of batch) {
+        const result = await this.processOne(
+          customer,
+          campaign,
+          dispatch.id,
+          campaign.restaurantId,
+        );
+        if (result.success) sentCount++;
+        else failedCount++;
+      }
+    }
+
+    const finalStatus =
+      customers.length > 0 && failedCount === customers.length
+        ? DispatchStatus.FAILED
+        : DispatchStatus.COMPLETED;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.campaignDispatch.update({
+        where: { id: dispatch.id },
+        data: { status: finalStatus, completedAt: new Date() },
+      });
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: { status: CampaignStatus.COMPLETED },
+      });
+    });
+
+    void this.audit.log(
+      campaign.restaurantId,
+      'CAMPAIGN_DISPATCH_SCHEDULED',
+      'Campaign',
+      campaignId,
+      {
+        dispatchId: dispatch.id,
+        total: customers.length,
+        sent: sentCount,
+        failed: failedCount,
+      },
+      campaign.createdByAccountId,
+    );
+
+    return {
+      dispatchId: dispatch.id,
+      totalMessages: customers.length,
+      sentCount,
+      failedCount,
+      skippedNoPhone: 0,
+    };
+  }
+
   async getMessages(
     campaignId: number,
     restaurantId: number,
