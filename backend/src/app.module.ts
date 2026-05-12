@@ -41,6 +41,7 @@ import { MarketplaceIntegrationsModule } from './marketplace-integrations/market
 import { CashRegisterModule } from './cash-register/cash-register.module';
 import { FiadoModule } from './fiado/fiado.module';
 import { AudiencesModule } from './audiences/audiences.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { AudiencesModule } from './audiences/audiences.module';
     CashRegisterModule,
     FiadoModule,
     AudiencesModule,
+    CampaignsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
