@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   DeliveryType,
+  MessageStatus,
   OptionPriceMode,
   OrderOrigin,
   OrderStatus,
@@ -551,6 +552,40 @@ export class OrdersService {
             include: { items: true },
           });
 
+          if (order.couponId && order.customerId) {
+            const campaignMsg = await tx.campaignMessage.findFirst({
+              where: {
+                couponId: order.couponId,
+                customerId: order.customerId,
+                status: {
+                  in: [
+                    MessageStatus.SENT,
+                    MessageStatus.DELIVERED,
+                    MessageStatus.READ,
+                  ],
+                },
+              },
+              select: { id: true, dispatch: { select: { campaignId: true } } },
+            });
+            if (campaignMsg) {
+              await tx.campaignMessage.update({
+                where: { id: campaignMsg.id },
+                data: {
+                  status: MessageStatus.CONVERTED,
+                  convertedAt: new Date(),
+                  orderId: order.id,
+                },
+              });
+              await tx.campaign.update({
+                where: { id: campaignMsg.dispatch.campaignId },
+                data: { statsConverted: { increment: 1 } },
+              });
+              this.logger.log(
+                `Conversion: campaign ${campaignMsg.dispatch.campaignId} → order ${order.id}`,
+              );
+            }
+          }
+
           await tx.$executeRaw`
             UPDATE "Customer"
             SET
@@ -876,6 +911,40 @@ export class OrdersService {
             },
             include: { items: true },
           });
+
+          if (order.couponId && order.customerId) {
+            const campaignMsg = await tx.campaignMessage.findFirst({
+              where: {
+                couponId: order.couponId,
+                customerId: order.customerId,
+                status: {
+                  in: [
+                    MessageStatus.SENT,
+                    MessageStatus.DELIVERED,
+                    MessageStatus.READ,
+                  ],
+                },
+              },
+              select: { id: true, dispatch: { select: { campaignId: true } } },
+            });
+            if (campaignMsg) {
+              await tx.campaignMessage.update({
+                where: { id: campaignMsg.id },
+                data: {
+                  status: MessageStatus.CONVERTED,
+                  convertedAt: new Date(),
+                  orderId: order.id,
+                },
+              });
+              await tx.campaign.update({
+                where: { id: campaignMsg.dispatch.campaignId },
+                data: { statsConverted: { increment: 1 } },
+              });
+              this.logger.log(
+                `Conversion: campaign ${campaignMsg.dispatch.campaignId} → order ${order.id}`,
+              );
+            }
+          }
 
           await tx.$executeRaw`
             UPDATE "Customer"

@@ -8,6 +8,8 @@ import {
   CampaignChannel,
   CampaignStatus,
   CampaignTipo,
+  MessageStatus,
+  OrderStatus,
   Prisma,
 } from '@prisma/client';
 import { CronExpressionParser } from 'cron-parser';
@@ -267,6 +269,40 @@ export class CampaignsService {
       accountId,
     );
     return updated;
+  }
+
+  async getCampaignReport(id: number, restaurantId: number) {
+    const campaign = await this.findOne(id, restaurantId);
+
+    const convertedMessages = await this.prisma.campaignMessage.findMany({
+      where: {
+        dispatch: { campaignId: id },
+        status: MessageStatus.CONVERTED,
+        orderId: { not: null },
+      },
+      select: {
+        order: { select: { total: true, orderStatus: true } },
+      },
+    });
+
+    const revenueConverted = convertedMessages
+      .filter((m) => m.order && m.order.orderStatus !== OrderStatus.CANCELED)
+      .reduce((sum, m) => sum + (m.order?.total ?? 0), 0);
+
+    const { statsSent, statsDelivered, statsRead, statsConverted } = campaign;
+
+    return {
+      campaignId: id,
+      nome: campaign.nome,
+      statsSent,
+      statsDelivered,
+      statsRead,
+      statsConverted,
+      deliveredRate: statsSent > 0 ? statsDelivered / statsSent : 0,
+      readRate: statsDelivered > 0 ? statsRead / statsDelivered : 0,
+      convertedRate: statsRead > 0 ? statsConverted / statsRead : 0,
+      revenueConverted,
+    };
   }
 
   async delete(id: number, restaurantId: number, accountId: number) {

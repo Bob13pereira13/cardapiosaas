@@ -153,6 +153,14 @@ export class CampaignsController {
     return this.scheduler.processScheduledCampaigns();
   }
 
+  @Get(':id/report')
+  getReport(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.getCampaignReport(id, req.user.activeRestaurantId);
+  }
+
   @Get(':id/messages')
   getMessages(
     @Param('id', ParseIntPipe) id: number,
