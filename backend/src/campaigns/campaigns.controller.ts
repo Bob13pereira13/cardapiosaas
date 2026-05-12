@@ -18,6 +18,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { CampaignStatus, MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { CampaignsService } from './campaigns.service';
+import { DispatchService } from './dispatch/dispatch.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 
@@ -47,7 +48,10 @@ function requireWriteRole(req: AuthenticatedRequest): void {
 @Controller('campaigns')
 @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
 export class CampaignsController {
-  constructor(private readonly service: CampaignsService) {}
+  constructor(
+    private readonly service: CampaignsService,
+    private readonly dispatch: DispatchService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateCampaignDto, @Request() req: AuthenticatedRequest) {
@@ -108,6 +112,35 @@ export class CampaignsController {
       id,
       req.user.activeRestaurantId,
       req.user.accountId,
+    );
+  }
+
+  @Post(':id/send')
+  @HttpCode(HttpStatus.OK)
+  send(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    requireWriteRole(req);
+    return this.dispatch.send(
+      id,
+      req.user.activeRestaurantId,
+      req.user.accountId,
+    );
+  }
+
+  @Get(':id/messages')
+  getMessages(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dispatch.getMessages(
+      id,
+      req.user.activeRestaurantId,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
     );
   }
 }
