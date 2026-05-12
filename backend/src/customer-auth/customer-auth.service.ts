@@ -5,42 +5,52 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class CustomerAuthService {
-  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwt: JwtService,
+  ) {}
 
-  async requestPin(phone: string, userId: number) {
+  async requestPin(phone: string, restaurantId: number) {
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
     const pinHash = await bcrypt.hash(pin, 10);
     const pinExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
     const customer = await this.prisma.customer.upsert({
-      where: { userId_phone: { userId, phone } },
-      create: { userId, name: phone, phone },
+      where: { restaurantId_phone: { restaurantId, phone } },
+      create: {
+        restaurantId,
+        name: phone,
+        phone,
+      },
       update: {},
       select: { id: true },
     });
 
     await this.prisma.customerAuth.upsert({
       where: { customerId: customer.id },
-      create: { customerId: customer.id, phone, userId, pin: pinHash, pinExpiry },
+      create: {
+        customerId: customer.id,
+        phone,
+        restaurantId,
+        pin: pinHash,
+        pinExpiry,
+      },
       update: { pin: pinHash, pinExpiry },
     });
 
-    if (process.env.SMTP_HOST) {
-      console.log(`[CustomerAuth] PIN ${pin} para ${phone}`);
-    } else {
-      console.log(`[CustomerAuth DEV] PIN ${pin} para ${phone} (userId ${userId})`);
-    }
-
+    // TODO: entregar PIN via MailService (email) ou SMS quando integração estiver pronta
+    // Em dev, consulte CustomerAuth.pin (hash) no banco e use bcrypt.compare para validar
     return { sent: true };
   }
 
-  async verifyPin(phone: string, userId: number, pin: string) {
+  async verifyPin(phone: string, restaurantId: number, pin: string) {
     const customer = await this.prisma.customer.findFirst({
-      where: { userId, phone },
+      where: { restaurantId, phone },
       include: { auth: true },
     });
 
-    if (!customer?.auth?.pin) throw new BadRequestException('PIN não solicitado.');
+    if (!customer?.auth?.pin)
+      throw new BadRequestException('PIN não solicitado.');
     if (customer.auth.pinExpiry && customer.auth.pinExpiry < new Date()) {
       throw new BadRequestException('PIN expirado. Solicite um novo.');
     }
@@ -54,7 +64,7 @@ export class CustomerAuthService {
     });
 
     const token = this.jwt.sign(
-      { sub: customer.id, userId, role: 'CUSTOMER' },
+      { sub: customer.id, restaurantId, role: 'CUSTOMER' },
       { expiresIn: '30d' },
     );
 
@@ -64,11 +74,11 @@ export class CustomerAuthService {
     };
   }
 
-  async getMe(customerId: number, userId: number) {
+  async getMe(customerId: number, restaurantId: number) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, userId },
+      where: { id: customerId, restaurantId },
       include: {
-        loyaltyPoints: { where: { userId } },
+        loyaltyPoints: { where: { restaurantId } },
       },
     });
     if (!customer) throw new BadRequestException('Cliente não encontrado.');
@@ -82,9 +92,9 @@ export class CustomerAuthService {
     };
   }
 
-  getOrders(customerId: number, userId: number) {
+  getOrders(customerId: number, restaurantId: number) {
     return this.prisma.order.findMany({
-      where: { customerId, userId },
+      where: { customerId, restaurantId },
       orderBy: { createdAt: 'desc' },
       take: 20,
       include: { items: true },
