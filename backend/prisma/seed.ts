@@ -1,12 +1,10 @@
 import 'dotenv/config';
 import {
   DeliveryType,
+  MembershipRole,
   OrderOrigin,
   OrderStatus,
-  PaymentMethod,
-  PaymentStatus,
   PrismaClient,
-  UserRole,
   SubscriptionStatus,
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -19,15 +17,23 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 async function main() {
   // ─── Restaurante de demo ────────────────────────────────────────────────
   const hash = await bcrypt.hash('demo1234', 10);
-  const restaurant = await prisma.user.upsert({
+
+  const demoAccount = await prisma.account.upsert({
     where: { email: 'demo@cardapiopedeai.com.br' },
     update: {},
     create: {
       nome: 'Pizzaria Bella',
       email: 'demo@cardapiopedeai.com.br',
       password: hash,
+    },
+  });
+
+  const demoRestaurant = await prisma.restaurant.upsert({
+    where: { slug: 'pizzaria-bella' },
+    update: {},
+    create: {
       slug: 'pizzaria-bella',
-      role: UserRole.RESTAURANT,
+      nome: 'Pizzaria Bella',
       subscriptionStatus: SubscriptionStatus.TRIAL,
       trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       corPrimaria: '#dc2626',
@@ -36,16 +42,31 @@ async function main() {
     },
   });
 
+  await prisma.membership.upsert({
+    where: {
+      accountId_restaurantId: {
+        accountId: demoAccount.id,
+        restaurantId: demoRestaurant.id,
+      },
+    },
+    update: {},
+    create: {
+      accountId: demoAccount.id,
+      restaurantId: demoRestaurant.id,
+      role: MembershipRole.OWNER,
+      ativo: true,
+    },
+  });
+
   // ─── Admin ───────────────────────────────────────────────────────────────
-  await prisma.user.upsert({
+  await prisma.account.upsert({
     where: { email: 'admin@cardapiopedeai.com.br' },
     update: {},
     create: {
       nome: 'Admin',
       email: 'admin@cardapiopedeai.com.br',
       password: await bcrypt.hash('admin1234', 10),
-      role: UserRole.ADMIN,
-      subscriptionStatus: SubscriptionStatus.ACTIVE,
+      isPlatformAdmin: true,
     },
   });
 
@@ -53,12 +74,12 @@ async function main() {
   const catPizzas = await prisma.category.upsert({
     where: { id: 1 },
     update: {},
-    create: { nome: 'Pizzas', userId: restaurant.id, displayOrder: 0 },
+    create: { nome: 'Pizzas', restaurantId: demoRestaurant.id, displayOrder: 0 },
   });
   const catBebidas = await prisma.category.upsert({
     where: { id: 2 },
     update: {},
-    create: { nome: 'Bebidas', userId: restaurant.id, displayOrder: 1 },
+    create: { nome: 'Bebidas', restaurantId: demoRestaurant.id, displayOrder: 1 },
   });
 
   // ─── Produtos ────────────────────────────────────────────────────────────
@@ -69,7 +90,7 @@ async function main() {
       nome: 'Pizza Margherita',
       descricao: 'Molho de tomate, mussarela, manjericão',
       preco: 45.0,
-      userId: restaurant.id,
+      restaurantId: demoRestaurant.id,
       categoryId: catPizzas.id,
       disponivel: true,
     },
@@ -81,7 +102,7 @@ async function main() {
       nome: 'Pizza Calabresa',
       descricao: 'Molho de tomate, mussarela, calabresa, cebola',
       preco: 49.0,
-      userId: restaurant.id,
+      restaurantId: demoRestaurant.id,
       categoryId: catPizzas.id,
       disponivel: true,
     },
@@ -93,7 +114,7 @@ async function main() {
       nome: 'Refrigerante Lata',
       descricao: 'Coca-Cola, Guaraná ou Fanta',
       preco: 6.0,
-      userId: restaurant.id,
+      restaurantId: demoRestaurant.id,
       categoryId: catBebidas.id,
       disponivel: true,
     },
@@ -117,11 +138,9 @@ async function main() {
     productId: number;
     qty: number;
     deliveryType: DeliveryType;
-    paymentMethod: PaymentMethod;
     origin: OrderOrigin;
     status: OrderStatus;
     createdAt: Date;
-    paymentStatus?: PaymentStatus;
     externalOrderId?: string;
     externalChannel?: string;
   }) {
@@ -131,16 +150,21 @@ async function main() {
     if (!product) return;
 
     const deliveryFee =
-      opts.deliveryType === DeliveryType.DELIVERY ? restaurant.taxaEntrega : 0;
+      opts.deliveryType === DeliveryType.DELIVERY
+        ? demoRestaurant.taxaEntrega
+        : 0;
     const subtotal = product.preco * opts.qty;
     const total = subtotal + deliveryFee;
 
     const customer = await prisma.customer.upsert({
       where: {
-        userId_phone: { userId: restaurant.id, phone: opts.customerPhone },
+        restaurantId_phone: {
+          restaurantId: demoRestaurant.id,
+          phone: opts.customerPhone,
+        },
       },
       create: {
-        userId: restaurant.id,
+        restaurantId: demoRestaurant.id,
         name: opts.customerName,
         phone: opts.customerPhone,
         lastOrderAt: opts.createdAt,
@@ -149,7 +173,12 @@ async function main() {
     });
 
     const existing = await prisma.order.findUnique({
-      where: { userId_orderNumber: { userId: restaurant.id, orderNumber: opts.number } },
+      where: {
+        restaurantId_orderNumber: {
+          restaurantId: demoRestaurant.id,
+          orderNumber: opts.number,
+        },
+      },
     });
     if (existing) return;
 
@@ -168,7 +197,7 @@ async function main() {
 
     await prisma.order.create({
       data: {
-        userId: restaurant.id,
+        restaurantId: demoRestaurant.id,
         customerId: customer.id,
         orderNumber: opts.number,
         customerName: opts.customerName,
@@ -178,8 +207,6 @@ async function main() {
         subtotal,
         discountAmount: 0,
         total,
-        paymentMethod: opts.paymentMethod,
-        paymentStatus: opts.paymentStatus ?? PaymentStatus.PENDING,
         orderStatus: opts.status,
         origin: opts.origin,
         externalOrderId: opts.externalOrderId,
@@ -211,10 +238,8 @@ async function main() {
     productId: p1.id,
     qty: 1,
     deliveryType: DeliveryType.DELIVERY,
-    paymentMethod: PaymentMethod.PIX,
     origin: OrderOrigin.WEBSITE,
     status: OrderStatus.DELIVERED,
-    paymentStatus: PaymentStatus.PAID,
     createdAt: yesterday(),
   });
 
@@ -225,7 +250,6 @@ async function main() {
     productId: p2.id,
     qty: 2,
     deliveryType: DeliveryType.PICKUP,
-    paymentMethod: PaymentMethod.CREDIT_CARD,
     origin: OrderOrigin.WEBSITE,
     status: OrderStatus.IN_PREPARATION,
     createdAt: minutesAgo(30),
@@ -238,7 +262,6 @@ async function main() {
     productId: p1.id,
     qty: 1,
     deliveryType: DeliveryType.PICKUP,
-    paymentMethod: PaymentMethod.CASH,
     origin: OrderOrigin.MANUAL,
     status: OrderStatus.CONFIRMED,
     createdAt: minutesAgo(5),
@@ -251,7 +274,6 @@ async function main() {
     productId: p2.id,
     qty: 1,
     deliveryType: DeliveryType.DELIVERY,
-    paymentMethod: PaymentMethod.PIX,
     origin: OrderOrigin.WHATSAPP_BOT,
     status: OrderStatus.PENDING,
     externalOrderId: 'wa-bot-mock-001',
@@ -265,18 +287,16 @@ async function main() {
     productId: p1.id,
     qty: 1,
     deliveryType: DeliveryType.DELIVERY,
-    paymentMethod: PaymentMethod.CREDIT_CARD,
     origin: OrderOrigin.IFOOD,
     status: OrderStatus.DELIVERED,
-    paymentStatus: PaymentStatus.PAID,
     externalOrderId: 'ifood-mock-XYZ123',
     externalChannel: 'ifood-merchant-demo',
     createdAt: hoursAgo(3),
   });
 
   console.log('✅ Seed concluído:', {
-    restaurant: restaurant.email,
-    slug: restaurant.slug,
+    restaurant: demoAccount.email,
+    slug: demoRestaurant.slug,
   });
 }
 

@@ -14,6 +14,10 @@ export class PublicService {
   }
 
   async getCardapio(slug: string, host?: string) {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
     const productSelect = {
       id: true,
       nome: true,
@@ -21,31 +25,42 @@ export class PublicService {
       preco: true,
       imagem: true,
       categoryId: true,
-      disponibilidadeAtiva: true,
-      disponibilidadeInicio: true,
-      disponibilidadeFim: true,
-      disponibilidadeDias: true,
       optionGroups: {
         orderBy: { ordem: 'asc' as const },
         include: {
           optionGroup: {
             include: {
-              options: { where: { available: true }, orderBy: { displayOrder: 'asc' as const } },
+              options: {
+                where: { available: true },
+                orderBy: { displayOrder: 'asc' as const },
+              },
             },
           },
         },
       },
     };
 
-    const onlyAvailable = { disponivel: true };
+    const onlyAvailable = {
+      disponivel: true,
+      OR: [
+        { availabilities: { none: {} } },
+        {
+          availabilities: {
+            some: {
+              dayOfWeek: currentDay,
+              startTime: { lte: currentTime },
+              endTime: { gte: currentTime },
+            },
+          },
+        },
+      ],
+    };
 
     const normalizedHost = this.normalizeHost(host);
-    const user = await this.prisma.user.findFirst({
+    const restaurant = await this.prisma.restaurant.findFirst({
       where:
         normalizedHost && slug === 'domain'
-          ? {
-              customDomain: normalizedHost,
-            }
+          ? { customDomain: normalizedHost }
           : { slug },
       select: {
         id: true,
@@ -80,12 +95,16 @@ export class PublicService {
       },
     });
 
-    if (!user) {
+    if (!restaurant) {
       throw new NotFoundException('Cardápio não encontrado');
     }
 
     const uncategorized = await this.prisma.product.findMany({
-      where: { userId: user.id, categoryId: null, disponivel: true },
+      where: {
+        restaurantId: restaurant.id,
+        categoryId: null,
+        ...onlyAvailable,
+      },
       orderBy: { id: 'asc' },
       take: 100,
       select: productSelect,
@@ -94,23 +113,10 @@ export class PublicService {
     const allCategories =
       uncategorized.length > 0
         ? [
-            ...user.categories,
+            ...restaurant.categories,
             { id: 0, nome: 'Outros', products: uncategorized },
           ]
-        : user.categories;
-
-    const now = new Date();
-    const currentDay = now.getDay();
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    function isProductAvailableNow(product: { disponibilidadeAtiva?: boolean; disponibilidadeInicio?: string | null; disponibilidadeFim?: string | null; disponibilidadeDias?: number[] }): boolean {
-      if (!product.disponibilidadeAtiva) return true;
-      if (product.disponibilidadeDias && !product.disponibilidadeDias.includes(currentDay)) return false;
-      if (product.disponibilidadeInicio && product.disponibilidadeFim) {
-        return currentTime >= product.disponibilidadeInicio && currentTime <= product.disponibilidadeFim;
-      }
-      return true;
-    }
+        : restaurant.categories;
 
     const normalizeProduct = (product: any) => ({
       ...product,
@@ -121,13 +127,13 @@ export class PublicService {
 
     const categoriesFiltered = allCategories.map((cat) => ({
       ...cat,
-      products: cat.products.filter((p: any) => isProductAvailableNow(p)).map(normalizeProduct),
+      products: cat.products.map(normalizeProduct),
     }));
 
     const categories = categoriesFiltered.filter((c) => c.products.length > 0);
 
     const combos = await this.prisma.combo.findMany({
-      where: { userId: user.id, ativo: true },
+      where: { restaurantId: restaurant.id, ativo: true },
       orderBy: { nome: 'asc' },
       select: {
         id: true,
@@ -138,28 +144,30 @@ export class PublicService {
         items: {
           select: {
             quantidade: true,
-            product: { select: { id: true, nome: true, preco: true, imagem: true } },
+            product: {
+              select: { id: true, nome: true, preco: true, imagem: true },
+            },
           },
         },
       },
     });
 
     return {
-      nome: user.nome,
-      whatsapp: user.whatsapp,
-      slug: user.slug,
-      logo: user.logo,
-      banner: user.banner,
-      aberto: user.aberto,
-      horarioAbertura: user.horarioAbertura,
-      horarioFechamento: user.horarioFechamento,
-      corPrimaria: user.corPrimaria,
-      gtmId: user.gtmId,
-      ga4MeasurementId: user.ga4MeasurementId,
-      metaPixelId: user.metaPixelId,
-      customDomain: user.customDomain,
-      customDomainVerified: user.customDomainVerified,
-      customDomainStatus: user.customDomainStatus,
+      nome: restaurant.nome,
+      whatsapp: restaurant.whatsapp,
+      slug: restaurant.slug,
+      logo: restaurant.logo,
+      banner: restaurant.banner,
+      aberto: restaurant.aberto,
+      horarioAbertura: restaurant.horarioAbertura,
+      horarioFechamento: restaurant.horarioFechamento,
+      corPrimaria: restaurant.corPrimaria,
+      gtmId: restaurant.gtmId,
+      ga4MeasurementId: restaurant.ga4MeasurementId,
+      metaPixelId: restaurant.metaPixelId,
+      customDomain: restaurant.customDomain,
+      customDomainVerified: restaurant.customDomainVerified,
+      customDomainStatus: restaurant.customDomainStatus,
       categories,
       combos,
     };
@@ -172,8 +180,6 @@ export class PublicService {
         id: true,
         orderNumber: true,
         orderStatus: true,
-        paymentStatus: true,
-        paymentMethod: true,
         deliveryType: true,
         customerName: true,
         customerAddress: true,
@@ -182,9 +188,17 @@ export class PublicService {
         discountAmount: true,
         total: true,
         notes: true,
-        pixQrCode: true,
-        pixCopyPaste: true,
         createdAt: true,
+        tab: {
+          select: {
+            payments: {
+              where: { status: 'CONFIRMED' },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { metodo: true, status: true },
+            },
+          },
+        },
         items: {
           select: {
             id: true,
@@ -205,12 +219,12 @@ export class PublicService {
   async submitNps(body: { orderId: number; score: number; comment?: string }) {
     const order = await this.prisma.order.findUnique({
       where: { id: body.orderId },
-      select: { id: true, userId: true, customerId: true },
+      select: { id: true, restaurantId: true, customerId: true },
     });
     if (!order) return { received: true };
     await this.prisma.npsResponse.create({
       data: {
-        userId: order.userId,
+        restaurantId: order.restaurantId,
         customerId: order.customerId,
         orderId: order.id,
         score: body.score,
@@ -218,7 +232,10 @@ export class PublicService {
       },
     });
     if (order.id) {
-      await this.prisma.order.update({ where: { id: order.id }, data: { npsRequested: true } });
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { npsRequested: true },
+      });
     }
     return { received: true };
   }
@@ -230,10 +247,18 @@ export class PublicService {
         id: true,
         orderNumber: true,
         orderStatus: true,
-        paymentStatus: true,
         total: true,
         deliveryType: true,
         createdAt: true,
+        tab: {
+          select: {
+            payments: {
+              where: { status: 'CONFIRMED' },
+              take: 1,
+              select: { status: true },
+            },
+          },
+        },
         items: {
           select: {
             id: true,

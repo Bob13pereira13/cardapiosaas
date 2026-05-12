@@ -39,7 +39,7 @@ export class MetaConversionService {
       return { sent: false, reason: 'missing_required_fields' };
     }
 
-    const restaurant = await this.prisma.user.findFirst({
+    const restaurant = await this.prisma.restaurant.findFirst({
       where: { slug },
       select: { metaPixelId: true, metaAccessToken: true },
     });

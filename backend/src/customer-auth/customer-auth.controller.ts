@@ -1,20 +1,29 @@
-import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { IsNotEmpty, IsString } from 'class-validator';
 import { CustomerAuthService } from './customer-auth.service';
 import { CustomerGuard } from './customer.guard';
 
 class RequestPinDto {
   @IsString() @IsNotEmpty() phone: string;
-  @IsNotEmpty() userId: number;
+  @IsNotEmpty() restaurantId: number;
 }
 
 class VerifyPinDto {
   @IsString() @IsNotEmpty() phone: string;
-  @IsNotEmpty() userId: number;
+  @IsNotEmpty() restaurantId: number;
   @IsString() @IsNotEmpty() pin: string;
 }
 
-type CustomerRequest = Request & { customer: { sub: number; userId: number } };
+type CustomerRequest = Request & {
+  customer: { sub: number; restaurantId: number };
+};
 
 @Controller('customer')
 export class CustomerAuthController {
@@ -22,23 +31,23 @@ export class CustomerAuthController {
 
   @Post('auth/request-pin')
   requestPin(@Body() dto: RequestPinDto) {
-    return this.svc.requestPin(dto.phone, Number(dto.userId));
+    return this.svc.requestPin(dto.phone, Number(dto.restaurantId));
   }
 
   @Post('auth/verify-pin')
   verifyPin(@Body() dto: VerifyPinDto) {
-    return this.svc.verifyPin(dto.phone, Number(dto.userId), dto.pin);
+    return this.svc.verifyPin(dto.phone, Number(dto.restaurantId), dto.pin);
   }
 
   @UseGuards(CustomerGuard)
   @Get('me')
   getMe(@Request() req: CustomerRequest) {
-    return this.svc.getMe(req.customer.sub, req.customer.userId);
+    return this.svc.getMe(req.customer.sub, req.customer.restaurantId);
   }
 
   @UseGuards(CustomerGuard)
   @Get('orders')
   getOrders(@Request() req: CustomerRequest) {
-    return this.svc.getOrders(req.customer.sub, req.customer.userId);
+    return this.svc.getOrders(req.customer.sub, req.customer.restaurantId);
   }
 }

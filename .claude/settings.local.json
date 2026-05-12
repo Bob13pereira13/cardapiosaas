@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma *)",
+      "Bash(timeout 30 npm run start:dev)",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"node dist/src/main.js\")",
+      "Bash(npx eslint *)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(findstr LISTENING)",
+      "PowerShell($resp = Invoke-RestMethod -Method Post -Uri \"http://localhost:3000/auth/login\" -ContentType \"application/json\" -Body '{\"email\":\"demo@cardapiopedeai.com.br\",\"password\":\"TestSmoke2026!\"}'; $global:TOKEN = $resp.access_token; \"token len: $\\($global:TOKEN.Length\\)\")",
+      "Bash(MARKETPLACE_ENCRYPTION_KEY=\"\" node dist/src/main.js)",
+      "Bash(curl -s http://localhost:3000/public/cardapio/pizzaria-bella)",
+      "Bash(node -e ' *)",
+      "Bash(xargs wc -l)",
+      "Bash(npx depcheck *)"
+    ]
+  }
+}

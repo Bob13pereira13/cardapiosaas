@@ -2,11 +2,13 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { DeliveryType, PaymentMethod } from '@prisma/client';
@@ -47,6 +49,11 @@ export class CreateManualOrderDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  tableId?: number;
 
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)

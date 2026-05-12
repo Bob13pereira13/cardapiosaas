@@ -15,9 +15,9 @@ describe('JwtStrategyService', () => {
         {
           provide: PrismaService,
           useValue: {
-            user: {
-              findUnique: jest.fn(),
-            },
+            user: { findUnique: jest.fn() },
+            account: { findUnique: jest.fn() },
+            restaurant: { findUnique: jest.fn() },
           },
         },
       ],

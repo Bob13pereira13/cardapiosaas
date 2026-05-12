@@ -12,14 +12,16 @@ export class CouponsService {
   constructor(private prisma: PrismaService) {}
 
   async validate(
-    userId: number,
+    restaurantId: number,
     code: string,
     subtotal: number,
     tx?: Prisma.TransactionClient,
   ) {
     const db = tx ?? this.prisma;
     const coupon = await db.coupon.findUnique({
-      where: { userId_code: { userId, code: code.toUpperCase() } },
+      where: {
+        restaurantId_code: { restaurantId, code: code.toUpperCase() },
+      },
     });
 
     if (!coupon || !coupon.active) {
@@ -66,17 +68,17 @@ export class CouponsService {
     return discount;
   }
 
-  findAll(userId: number) {
+  findAll(restaurantId: number) {
     return this.prisma.coupon.findMany({
-      where: { userId },
+      where: { restaurantId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async create(userId: number, dto: CreateCouponDto) {
+  async create(restaurantId: number, dto: CreateCouponDto) {
     return this.prisma.coupon.create({
       data: {
-        userId,
+        restaurantId,
         code: dto.code.toUpperCase(),
         type: dto.type,
         value: dto.value,
@@ -89,9 +91,9 @@ export class CouponsService {
     });
   }
 
-  async toggle(id: number, userId: number) {
+  async toggle(id: number, restaurantId: number) {
     const coupon = await this.prisma.coupon.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
     });
     if (!coupon) throw new NotFoundException('Cupom não encontrado.');
     return this.prisma.coupon.update({
@@ -100,9 +102,9 @@ export class CouponsService {
     });
   }
 
-  async remove(id: number, userId: number) {
+  async remove(id: number, restaurantId: number) {
     const coupon = await this.prisma.coupon.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
     });
     if (!coupon) throw new NotFoundException('Cupom não encontrado.');
     await this.prisma.coupon.delete({ where: { id } });

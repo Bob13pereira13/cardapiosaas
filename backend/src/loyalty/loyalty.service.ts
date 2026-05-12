@@ -5,25 +5,29 @@ import { PrismaService } from '../prisma/prisma.service';
 export class LoyaltyService {
   constructor(private prisma: PrismaService) {}
 
-  async getSettings(userId: number) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  async getSettings(restaurantId: number) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
       select: {
         loyaltyEnabled: true,
         loyaltyPointsPerBrl: true,
         loyaltyRedeemRate: true,
       },
     });
-    if (!user) throw new NotFoundException('Usuário não encontrado.');
-    return user;
+    if (!restaurant) throw new NotFoundException('Restaurante não encontrado.');
+    return restaurant;
   }
 
   async updateSettings(
-    userId: number,
-    dto: { loyaltyEnabled?: boolean; loyaltyPointsPerBrl?: number; loyaltyRedeemRate?: number },
+    restaurantId: number,
+    dto: {
+      loyaltyEnabled?: boolean;
+      loyaltyPointsPerBrl?: number;
+      loyaltyRedeemRate?: number;
+    },
   ) {
-    return this.prisma.user.update({
-      where: { id: userId },
+    return this.prisma.restaurant.update({
+      where: { id: restaurantId },
       data: dto,
       select: {
         loyaltyEnabled: true,
@@ -33,12 +37,12 @@ export class LoyaltyService {
     });
   }
 
-  async getCustomerPoints(userId: number, customerId: number) {
+  async getCustomerPoints(restaurantId: number, customerId: number) {
     const points = await this.prisma.loyaltyPoints.findUnique({
-      where: { customerId_userId: { userId, customerId } },
+      where: { customerId_restaurantId: { restaurantId, customerId } },
     });
     const txs = await this.prisma.loyaltyTransaction.findMany({
-      where: { userId, customerId },
+      where: { restaurantId, customerId },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -51,24 +55,43 @@ export class LoyaltyService {
     };
   }
 
-  async awardPoints(userId: number, customerId: number, orderId: number, orderTotal: number) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  async awardPoints(
+    restaurantId: number,
+    customerId: number,
+    orderId: number,
+    orderTotal: number,
+  ) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
       select: { loyaltyEnabled: true, loyaltyPointsPerBrl: true },
     });
-    if (!user?.loyaltyEnabled) return null;
+    if (!restaurant?.loyaltyEnabled) return null;
 
-    const points = Math.floor(orderTotal * user.loyaltyPointsPerBrl);
+    const points = Math.floor(orderTotal * restaurant.loyaltyPointsPerBrl);
     if (points <= 0) return null;
 
     await this.prisma.$transaction([
       this.prisma.loyaltyPoints.upsert({
-        where: { customerId_userId: { userId, customerId } },
-        create: { userId, customerId, points, totalEarned: points },
-        update: { points: { increment: points }, totalEarned: { increment: points } },
+        where: { customerId_restaurantId: { restaurantId, customerId } },
+        create: {
+          restaurantId,
+          customerId,
+          points,
+          totalEarned: points,
+        },
+        update: {
+          points: { increment: points },
+          totalEarned: { increment: points },
+        },
       }),
       this.prisma.loyaltyTransaction.create({
-        data: { userId, customerId, orderId, points, type: 'EARNED' },
+        data: {
+          restaurantId,
+          customerId,
+          orderId,
+          points,
+          type: 'EARNED',
+        },
       }),
       this.prisma.order.update({
         where: { id: orderId },
@@ -79,14 +102,19 @@ export class LoyaltyService {
     return points;
   }
 
-  async getOverview(userId: number) {
+  async getOverview(restaurantId: number) {
     const [rows, totals] = await Promise.all([
       this.prisma.loyaltyPoints.findMany({
-        where: { userId },
-        select: { customerId: true, points: true, totalEarned: true, totalSpent: true },
+        where: { restaurantId },
+        select: {
+          customerId: true,
+          points: true,
+          totalEarned: true,
+          totalSpent: true,
+        },
       }),
       this.prisma.loyaltyPoints.aggregate({
-        where: { userId },
+        where: { restaurantId },
         _sum: { totalEarned: true, totalSpent: true },
         _count: { customerId: true },
       }),
@@ -101,33 +129,37 @@ export class LoyaltyService {
     };
   }
 
-  async getTopCustomers(userId: number) {
+  async getTopCustomers(restaurantId: number) {
     return this.prisma.loyaltyPoints.findMany({
-      where: { userId },
+      where: { restaurantId },
       orderBy: { points: 'desc' },
       take: 50,
       include: { customer: { select: { name: true, phone: true } } },
     });
   }
 
-  async redeemForCoupon(userId: number, customerId: number, points: number) {
+  async redeemForCoupon(
+    restaurantId: number,
+    customerId: number,
+    points: number,
+  ) {
     const current = await this.prisma.loyaltyPoints.findUnique({
-      where: { customerId_userId: { userId, customerId } },
+      where: { customerId_restaurantId: { restaurantId, customerId } },
     });
     if (!current || current.points < points) {
       throw new Error('Pontos insuficientes.');
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
       select: { loyaltyRedeemRate: true },
     });
-    const discountValue = points / (user?.loyaltyRedeemRate ?? 100);
+    const discountValue = points / (restaurant?.loyaltyRedeemRate ?? 100);
 
     const code = `FIDELIDADE${Date.now()}`;
     const coupon = await this.prisma.coupon.create({
       data: {
-        userId,
+        restaurantId,
         code,
         type: 'FIXED',
         value: discountValue,
@@ -139,38 +171,61 @@ export class LoyaltyService {
 
     await this.prisma.$transaction([
       this.prisma.loyaltyPoints.update({
-        where: { customerId_userId: { userId, customerId } },
-        data: { points: { decrement: points }, totalSpent: { increment: points } },
+        where: { customerId_restaurantId: { restaurantId, customerId } },
+        data: {
+          points: { decrement: points },
+          totalSpent: { increment: points },
+        },
       }),
       this.prisma.loyaltyTransaction.create({
-        data: { userId, customerId, points: -points, type: 'REDEEMED', description: `Cupom ${code}` },
+        data: {
+          restaurantId,
+          customerId,
+          points: -points,
+          type: 'REDEEMED',
+          description: `Cupom ${code}`,
+        },
       }),
     ]);
 
     return { coupon, discountValue };
   }
 
-  async redeemPoints(userId: number, customerId: number, orderId: number, points: number) {
+  async redeemPoints(
+    restaurantId: number,
+    customerId: number,
+    orderId: number,
+    points: number,
+  ) {
     const current = await this.prisma.loyaltyPoints.findUnique({
-      where: { customerId_userId: { userId, customerId } },
+      where: { customerId_restaurantId: { restaurantId, customerId } },
     });
     if (!current || current.points < points) {
       throw new NotFoundException('Pontos insuficientes.');
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
       select: { loyaltyRedeemRate: true },
     });
-    const discount = points / (user?.loyaltyRedeemRate ?? 100);
+    const discount = points / (restaurant?.loyaltyRedeemRate ?? 100);
 
     await this.prisma.$transaction([
       this.prisma.loyaltyPoints.update({
-        where: { customerId_userId: { userId, customerId } },
-        data: { points: { decrement: points }, totalSpent: { increment: points } },
+        where: { customerId_restaurantId: { restaurantId, customerId } },
+        data: {
+          points: { decrement: points },
+          totalSpent: { increment: points },
+        },
       }),
       this.prisma.loyaltyTransaction.create({
-        data: { userId, customerId, orderId, points: -points, type: 'REDEEMED' },
+        data: {
+          restaurantId,
+          customerId,
+          orderId,
+          points: -points,
+          type: 'REDEEMED',
+        },
       }),
       this.prisma.order.update({
         where: { id: orderId },

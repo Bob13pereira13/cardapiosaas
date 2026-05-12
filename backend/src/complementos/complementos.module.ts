@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ComplementosController, OpcoesController } from './complementos.controller';
+import {
+  ComplementosController,
+  OpcoesController,
+} from './complementos.controller';
 import { ComplementosService } from './complementos.service';
 import { PrismaModule } from '../prisma/prisma.module';
 

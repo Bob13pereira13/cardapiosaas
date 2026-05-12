@@ -1,75 +1,159 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { MembershipRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { TeamMemberRole } from '@prisma/client';
-
-interface CreateTeamMemberDto {
-  nome: string;
-  email: string;
-  senha?: string;
-  password?: string;
-  cargo?: TeamMemberRole;
-}
-
-interface UpdateTeamMemberDto {
-  nome?: string;
-  email?: string;
-  password?: string;
-  cargo?: TeamMemberRole;
-  ativo?: boolean;
-}
 
 @Injectable()
 export class TeamService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: number) {
-    return this.prisma.restaurantTeamMember.findMany({
-      where: { userId },
+  findAll(restaurantId: number) {
+    return this.prisma.membership.findMany({
+      where: { restaurantId, ativo: true },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, nome: true, email: true, cargo: true, ativo: true, lastLoginAt: true, createdAt: true },
+      select: {
+        id: true,
+        role: true,
+        ativo: true,
+        lastLoginAt: true,
+        createdAt: true,
+        account: {
+          select: { id: true, nome: true, email: true, whatsapp: true },
+        },
+      },
     });
   }
 
-  async create(userId: number, dto: CreateTeamMemberDto) {
-    const exists = await this.prisma.restaurantTeamMember.findFirst({ where: { userId, email: dto.email } });
-    if (exists) throw new BadRequestException('Já existe um membro com esse e-mail.');
-    const rawPassword = dto.senha ?? dto.password;
-    if (!rawPassword) throw new BadRequestException('Senha temporaria obrigatoria.');
-    const hash = await bcrypt.hash(rawPassword, 10);
-    return this.prisma.restaurantTeamMember.create({
-      data: { userId, nome: dto.nome, email: dto.email, password: hash, cargo: dto.cargo ?? 'ATTENDANT' },
-      select: { id: true, nome: true, email: true, cargo: true, ativo: true, lastLoginAt: true, createdAt: true },
+  async create(
+    restaurantId: number,
+    dto: {
+      nome: string;
+      email: string;
+      senha?: string;
+      password?: string;
+      role?: MembershipRole;
+    },
+  ) {
+    const existingAccount = await this.prisma.account.findUnique({
+      where: { email: dto.email },
     });
-  }
 
-  async update(userId: number, id: number, dto: UpdateTeamMemberDto) {
-    await this.ensureOwner(userId, id);
-    const data: Record<string, unknown> = { ...dto };
-    if (dto.password) {
-      data.password = await bcrypt.hash(dto.password, 10);
+    const targetRole = dto.role ?? MembershipRole.ATTENDANT;
+
+    if (existingAccount) {
+      const existingMembership = await this.prisma.membership.findUnique({
+        where: {
+          accountId_restaurantId: {
+            accountId: existingAccount.id,
+            restaurantId,
+          },
+        },
+      });
+
+      if (existingMembership) {
+        if (existingMembership.ativo) {
+          throw new BadRequestException('Membro já existe neste restaurante.');
+        }
+        return this.prisma.membership.update({
+          where: { id: existingMembership.id },
+          data: { ativo: true, role: targetRole },
+          select: {
+            id: true,
+            role: true,
+            ativo: true,
+            lastLoginAt: true,
+            createdAt: true,
+            account: {
+              select: { id: true, nome: true, email: true, whatsapp: true },
+            },
+          },
+        });
+      }
+
+      return this.prisma.membership.create({
+        data: { accountId: existingAccount.id, restaurantId, role: targetRole },
+        select: {
+          id: true,
+          role: true,
+          ativo: true,
+          lastLoginAt: true,
+          createdAt: true,
+          account: {
+            select: { id: true, nome: true, email: true, whatsapp: true },
+          },
+        },
+      });
     }
-    return this.prisma.restaurantTeamMember.update({
-      where: { id },
-      data,
-      select: { id: true, nome: true, email: true, cargo: true, ativo: true, lastLoginAt: true, createdAt: true },
+
+    const rawPassword = dto.senha ?? dto.password;
+    if (!rawPassword) {
+      throw new BadRequestException(
+        'Senha temporária obrigatória para nova conta.',
+      );
+    }
+    const hash = await bcrypt.hash(rawPassword, 10);
+    const account = await this.prisma.account.create({
+      data: { email: dto.email, nome: dto.nome, password: hash },
+    });
+
+    return this.prisma.membership.create({
+      data: { accountId: account.id, restaurantId, role: targetRole },
+      select: {
+        id: true,
+        role: true,
+        ativo: true,
+        lastLoginAt: true,
+        createdAt: true,
+        account: {
+          select: { id: true, nome: true, email: true, whatsapp: true },
+        },
+      },
     });
   }
 
-  async remove(userId: number, id: number) {
-    await this.ensureOwner(userId, id);
-    await this.prisma.restaurantTeamMember.delete({ where: { id } });
+  async update(
+    restaurantId: number,
+    membershipId: number,
+    dto: { role?: MembershipRole },
+  ) {
+    await this.ensureOwner(restaurantId, membershipId);
+    return this.prisma.membership.update({
+      where: { id: membershipId },
+      data: { role: dto.role },
+      select: {
+        id: true,
+        role: true,
+        ativo: true,
+        lastLoginAt: true,
+        updatedAt: true,
+        account: {
+          select: { id: true, nome: true, email: true },
+        },
+      },
+    });
+  }
+
+  async remove(restaurantId: number, membershipId: number) {
+    const membership = await this.ensureOwner(restaurantId, membershipId);
+    if (membership.role === MembershipRole.OWNER) {
+      throw new BadRequestException('Não é possível remover o proprietário.');
+    }
+    await this.prisma.membership.update({
+      where: { id: membershipId },
+      data: { ativo: false },
+    });
     return { ok: true };
   }
 
-  async getLastLogin(userId: number, id: number) {
-    const member = await this.ensureOwner(userId, id);
-    return { lastLoginAt: member.lastLoginAt };
-  }
-
-  private async ensureOwner(userId: number, id: number) {
-    const member = await this.prisma.restaurantTeamMember.findFirst({ where: { id, userId } });
-    if (!member) throw new NotFoundException('Membro não encontrado.');
-    return member;
+  private async ensureOwner(restaurantId: number, membershipId: number) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { id: membershipId, restaurantId },
+    });
+    if (!membership) throw new NotFoundException('Membro não encontrado.');
+    return membership;
   }
 }

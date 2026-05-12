@@ -1,38 +1,42 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { CampaignStatus, CampaignTipo } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CampaignsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: number) {
+  findAll(restaurantId: number) {
     return this.prisma.campaign.findMany({
-      where: { userId },
+      where: { restaurantId },
       orderBy: { createdAt: 'desc' },
       include: { coupon: { select: { code: true, type: true, value: true } } },
     });
   }
 
-  async findOne(userId: number, id: number) {
+  async findOne(restaurantId: number, id: number) {
     const campaign = await this.prisma.campaign.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
       include: { coupon: { select: { code: true, type: true, value: true } } },
     });
     if (!campaign) throw new NotFoundException('Campanha nao encontrada.');
     return campaign;
   }
 
-  create(userId: number, dto: {
-    nome: string;
-    tipo?: string;
-    descricao?: string;
-    couponId?: number;
-  }) {
+  create(
+    restaurantId: number,
+    dto: {
+      nome: string;
+      tipo?: string;
+      descricao?: string;
+      couponId?: number;
+    },
+  ) {
     return this.prisma.campaign.create({
       data: {
-        userId,
+        restaurantId,
         nome: dto.nome,
-        tipo: (dto.tipo as any) ?? 'CUPOM',
+        tipo: (dto.tipo as CampaignTipo) ?? CampaignTipo.CUPOM,
         descricao: dto.descricao,
         couponId: dto.couponId,
       },
@@ -40,34 +44,57 @@ export class CampaignsService {
     });
   }
 
-  async update(userId: number, id: number, dto: {
-    nome?: string;
-    tipo?: string;
-    status?: string;
-    descricao?: string;
-    couponId?: number;
-  }) {
-    await this.ensureOwner(userId, id);
-    return this.prisma.campaign.update({ where: { id }, data: dto as any });
+  async update(
+    restaurantId: number,
+    id: number,
+    dto: {
+      nome?: string;
+      tipo?: string;
+      status?: string;
+      descricao?: string;
+      couponId?: number;
+    },
+  ) {
+    await this.ensureOwner(restaurantId, id);
+    return this.prisma.campaign.update({
+      where: { id },
+      data: {
+        ...(dto.nome !== undefined && { nome: dto.nome }),
+        ...(dto.tipo !== undefined && { tipo: dto.tipo as CampaignTipo }),
+        ...(dto.status !== undefined && {
+          status: dto.status as CampaignStatus,
+        }),
+        ...(dto.descricao !== undefined && { descricao: dto.descricao }),
+        ...(dto.couponId !== undefined && { couponId: dto.couponId }),
+      },
+    });
   }
 
-  async remove(userId: number, id: number) {
-    await this.ensureOwner(userId, id);
+  async remove(restaurantId: number, id: number) {
+    await this.ensureOwner(restaurantId, id);
     return this.prisma.campaign.delete({ where: { id } });
   }
 
-  async activate(userId: number, id: number) {
-    await this.ensureOwner(userId, id);
-    return this.prisma.campaign.update({ where: { id }, data: { status: 'ATIVA' } });
+  async activate(restaurantId: number, id: number) {
+    await this.ensureOwner(restaurantId, id);
+    return this.prisma.campaign.update({
+      where: { id },
+      data: { status: 'ATIVA' },
+    });
   }
 
-  async pause(userId: number, id: number) {
-    await this.ensureOwner(userId, id);
-    return this.prisma.campaign.update({ where: { id }, data: { status: 'PAUSADA' } });
+  async pause(restaurantId: number, id: number) {
+    await this.ensureOwner(restaurantId, id);
+    return this.prisma.campaign.update({
+      where: { id },
+      data: { status: 'PAUSADA' },
+    });
   }
 
-  private async ensureOwner(userId: number, id: number) {
-    const campaign = await this.prisma.campaign.findFirst({ where: { id, userId } });
+  private async ensureOwner(restaurantId: number, id: number) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id, restaurantId },
+    });
     if (!campaign) throw new NotFoundException('Campanha nao encontrada.');
     return campaign;
   }

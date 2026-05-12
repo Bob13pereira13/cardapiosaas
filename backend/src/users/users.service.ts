@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Prisma, SubscriptionStatus, UserRole } from '@prisma/client';
+import { MembershipRole, Prisma, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { UpdateMeDto } from './dto/update-me.dto';
@@ -7,17 +7,20 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService, private mail: MailService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+  ) {}
 
   private hideTrackingToken<
     T extends {
       metaAccessToken?: string | null;
       metaAccessTokenConfigured?: boolean;
     },
-  >(user: T) {
-    const { metaAccessToken, ...safeUser } = user;
+  >(obj: T) {
+    const { metaAccessToken, ...safe } = obj;
     return {
-      ...safeUser,
+      ...safe,
       metaAccessTokenConfigured: Boolean(metaAccessToken),
     };
   }
@@ -26,7 +29,7 @@ export class UsersService {
     return nome
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
   }
@@ -46,45 +49,61 @@ export class UsersService {
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 7);
 
-    const user = await this.prisma.user.create({
-      data: {
-        nome: data.nome,
-        email: data.email,
-        password: hashedPassword,
-        slug,
-        subscriptionStatus: SubscriptionStatus.TRIAL,
-        trialEndsAt,
+    const { account, restaurant } = await this.prisma.$transaction(
+      async (tx) => {
+        const account = await tx.account.create({
+          data: {
+            nome: data.nome,
+            email: data.email,
+            password: hashedPassword,
+          },
+        });
+
+        const restaurant = await tx.restaurant.create({
+          data: {
+            slug,
+            nome: data.nome,
+            subscriptionStatus: SubscriptionStatus.TRIAL,
+            trialEndsAt,
+          },
+        });
+
+        await tx.membership.create({
+          data: {
+            accountId: account.id,
+            restaurantId: restaurant.id,
+            role: MembershipRole.OWNER,
+            ativo: true,
+          },
+        });
+
+        return { account, restaurant };
       },
-    });
-    void this.mail.sendWelcome(user.email, user.nome, slug).catch(() => undefined);
-    return user;
+    );
+
+    void this.mail
+      .sendWelcome(account.email, account.nome, restaurant.slug)
+      .catch(() => undefined);
+    return { ...account, slug: restaurant.slug };
   }
 
   async findByEmail(email: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!user) return null;
-
-    return this.expireTrialIfNeeded(user);
+    return this.prisma.account.findUnique({ where: { email } });
   }
 
-  async updateWhatsapp(userId: number, whatsapp: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
+  async updateWhatsapp(restaurantId: number, whatsapp: string) {
+    return this.prisma.restaurant.update({
+      where: { id: restaurantId },
       data: { whatsapp },
     });
   }
 
   async findById(id: number) {
-    const user = await this.prisma.user.findUnique({
+    const restaurant = await this.prisma.restaurant.findUnique({
       where: { id },
       select: {
         id: true,
         nome: true,
-        email: true,
-        whatsapp: true,
         slug: true,
         logo: true,
         banner: true,
@@ -93,8 +112,6 @@ export class UsersService {
         horarioFechamento: true,
         corPrimaria: true,
         taxaEntrega: true,
-        role: true,
-        isActive: true,
         plan: true,
         subscriptionStatus: true,
         trialEndsAt: true,
@@ -116,6 +133,7 @@ export class UsersService {
         aceitaCartaoCredito: true,
         aceitaCartaoDebito: true,
         chavePix: true,
+        whatsapp: true,
         businessHours: true,
         textoBoasVindas: true,
         textoRodape: true,
@@ -139,21 +157,21 @@ export class UsersService {
       },
     });
 
-    if (!user) return null;
+    if (!restaurant) return null;
 
-    const userWithTrialStatus = await this.expireTrialIfNeeded(user);
-    return this.hideTrackingToken(userWithTrialStatus);
+    const withTrialStatus = await this.expireTrialIfNeeded(restaurant);
+    return this.hideTrackingToken(withTrialStatus);
   }
 
   async setResetToken(userId: number, token: string, expiry: Date) {
-    return this.prisma.user.update({
+    return this.prisma.account.update({
       where: { id: userId },
       data: { resetToken: token, resetTokenExpiry: expiry },
     });
   }
 
   async findByResetToken(token: string) {
-    return this.prisma.user.findFirst({
+    return this.prisma.account.findFirst({
       where: {
         resetToken: token,
         resetTokenExpiry: { gt: new Date() },
@@ -162,7 +180,7 @@ export class UsersService {
   }
 
   async updatePassword(userId: number, hashedPassword: string) {
-    return this.prisma.user.update({
+    return this.prisma.account.update({
       where: { id: userId },
       data: {
         password: hashedPassword,
@@ -179,11 +197,8 @@ export class UsersService {
     if (data.slug !== undefined || data.nome !== undefined) {
       slugFormatado = this.gerarSlug(data.slug || data.nome || '');
 
-      const slugExistente = await this.prisma.user.findFirst({
-        where: {
-          slug: slugFormatado,
-          NOT: { id: userId },
-        },
+      const slugExistente = await this.prisma.restaurant.findFirst({
+        where: { slug: slugFormatado, NOT: { id: userId } },
       });
 
       if (slugExistente) {
@@ -192,13 +207,14 @@ export class UsersService {
     }
 
     if (data.newPassword) {
-      const currentUser = await this.prisma.user.findUnique({
+      const currentAccount = await this.prisma.account.findUnique({
         where: { id: userId },
         select: { password: true },
       });
-      const valid = currentUser && data.currentPassword
-        ? await bcrypt.compare(data.currentPassword, currentUser.password)
-        : false;
+      const valid =
+        currentAccount && data.currentPassword
+          ? await bcrypt.compare(data.currentPassword, currentAccount.password)
+          : false;
       if (!valid) throw new BadRequestException('Senha atual invalida.');
       hashedPassword = await bcrypt.hash(data.newPassword, 10);
     }
@@ -206,17 +222,14 @@ export class UsersService {
     const customDomain = this.normalizeDomain(data.customDomain);
     let customDomainChanged = false;
     if (customDomain) {
-      const currentUser = await this.prisma.user.findUnique({
+      const currentRestaurant = await this.prisma.restaurant.findUnique({
         where: { id: userId },
         select: { customDomain: true },
       });
-      customDomainChanged = currentUser?.customDomain !== customDomain;
+      customDomainChanged = currentRestaurant?.customDomain !== customDomain;
 
-      const domainOwner = await this.prisma.user.findFirst({
-        where: {
-          customDomain,
-          NOT: { id: userId },
-        },
+      const domainOwner = await this.prisma.restaurant.findFirst({
+        where: { customDomain, NOT: { id: userId } },
       });
 
       if (domainOwner) {
@@ -224,13 +237,20 @@ export class UsersService {
       }
     }
 
-    const updatedUser = await this.prisma.user.update({
+    if (data.email || hashedPassword) {
+      await this.prisma.account.update({
+        where: { id: userId },
+        data: {
+          ...(data.email ? { email: data.email } : {}),
+          ...(hashedPassword ? { password: hashedPassword } : {}),
+        },
+      });
+    }
+
+    const updatedRestaurant = await this.prisma.restaurant.update({
       where: { id: userId },
       data: {
         nome: data.nome,
-        email: data.email,
-        password: hashedPassword,
-        whatsapp: data.whatsapp,
         slug: slugFormatado,
         logo: data.logo,
         banner: data.banner,
@@ -265,43 +285,47 @@ export class UsersService {
               : !customDomain
                 ? null
                 : undefined,
-        aceitaEntrega:             data.aceitaEntrega,
-        aceitaRetirada:            data.aceitaRetirada,
-        aceitaMesa:                data.aceitaMesa,
-        tempoEstimadoEntrega:      data.tempoEstimadoEntrega,
+        aceitaEntrega: data.aceitaEntrega,
+        aceitaRetirada: data.aceitaRetirada,
+        aceitaMesa: data.aceitaMesa,
+        tempoEstimadoEntrega: data.tempoEstimadoEntrega,
         pedidoMinimoEntregaGratis: data.pedidoMinimoEntregaGratis,
-        raioEntregaKm:             data.raioEntregaKm,
-        aceitaDinheiro:            data.aceitaDinheiro,
-        aceitaPixPresencial:       data.aceitaPixPresencial,
-        aceitaCartaoCredito:       data.aceitaCartaoCredito,
-        aceitaCartaoDebito:        data.aceitaCartaoDebito,
-        chavePix:                  data.chavePix,
-        businessHours:             data.businessHours ?? undefined,
-        textoBoasVindas:           data.textoBoasVindas,
-        textoRodape:               data.textoRodape,
-        mostrarPrecos:             data.mostrarPrecos,
-        mensagemFechado:           data.mensagemFechado,
-        pausaAtiva:                data.pausaAtiva,
-        pausaAbertura:             data.pausaAbertura,
-        pausaFechamento:           data.pausaFechamento,
-        bairrosAtendidos:          data.bairrosAtendidos === undefined ? undefined : data.bairrosAtendidos === null ? Prisma.JsonNull : data.bairrosAtendidos,
-        mensagemEntrega:           data.mensagemEntrega,
-        wppMsgPedido:              data.wppMsgPedido,
-        wppMsgConfirmado:          data.wppMsgConfirmado,
-        wppMsgPronto:              data.wppMsgPronto,
-        wppMsgSaiu:                data.wppMsgSaiu,
-        wppEnvioAutomatico:        data.wppEnvioAutomatico,
-        nomePlataforma:            data.nomePlataforma,
-        emailSuporte:              data.emailSuporte,
-        whatsappSuporte:           data.whatsappSuporte,
-        urlPublica:                data.urlPublica,
-        notifEmailNewOrder:        data.notifEmailNewOrder,
+        raioEntregaKm: data.raioEntregaKm,
+        aceitaDinheiro: data.aceitaDinheiro,
+        aceitaPixPresencial: data.aceitaPixPresencial,
+        aceitaCartaoCredito: data.aceitaCartaoCredito,
+        aceitaCartaoDebito: data.aceitaCartaoDebito,
+        chavePix: data.chavePix,
+        whatsapp: data.whatsapp,
+        businessHours: data.businessHours ?? undefined,
+        textoBoasVindas: data.textoBoasVindas,
+        textoRodape: data.textoRodape,
+        mostrarPrecos: data.mostrarPrecos,
+        mensagemFechado: data.mensagemFechado,
+        pausaAtiva: data.pausaAtiva,
+        pausaAbertura: data.pausaAbertura,
+        pausaFechamento: data.pausaFechamento,
+        bairrosAtendidos:
+          data.bairrosAtendidos === undefined
+            ? undefined
+            : data.bairrosAtendidos === null
+              ? Prisma.JsonNull
+              : data.bairrosAtendidos,
+        mensagemEntrega: data.mensagemEntrega,
+        wppMsgPedido: data.wppMsgPedido,
+        wppMsgConfirmado: data.wppMsgConfirmado,
+        wppMsgPronto: data.wppMsgPronto,
+        wppMsgSaiu: data.wppMsgSaiu,
+        wppEnvioAutomatico: data.wppEnvioAutomatico,
+        nomePlataforma: data.nomePlataforma,
+        emailSuporte: data.emailSuporte,
+        whatsappSuporte: data.whatsappSuporte,
+        urlPublica: data.urlPublica,
+        notifEmailNewOrder: data.notifEmailNewOrder,
       },
       select: {
         id: true,
         nome: true,
-        email: true,
-        whatsapp: true,
         slug: true,
         logo: true,
         banner: true,
@@ -310,8 +334,6 @@ export class UsersService {
         horarioFechamento: true,
         corPrimaria: true,
         taxaEntrega: true,
-        role: true,
-        isActive: true,
         plan: true,
         subscriptionStatus: true,
         trialEndsAt: true,
@@ -329,10 +351,10 @@ export class UsersService {
         pedidoMinimoEntregaGratis: true,
         raioEntregaKm: true,
         aceitaDinheiro: true,
-        aceitaPixPresencial: true,
         aceitaCartaoCredito: true,
         aceitaCartaoDebito: true,
         chavePix: true,
+        whatsapp: true,
         businessHours: true,
         textoBoasVindas: true,
         textoRodape: true,
@@ -353,43 +375,33 @@ export class UsersService {
         whatsappSuporte: true,
         urlPublica: true,
         notifEmailNewOrder: true,
+        aceitaPixPresencial: true,
       },
     });
 
-    if (data.currentPassword && data.newPassword) {
-      const userRow = await this.prisma.user.findUnique({ where: { id: userId }, select: { password: true } });
-      if (!userRow) throw new BadRequestException('Usuário não encontrado.');
-      const valid = await bcrypt.compare(data.currentPassword, userRow.password);
-      if (!valid) throw new BadRequestException('Senha atual incorreta.');
-      const hashed = await bcrypt.hash(data.newPassword, 10);
-      await this.prisma.user.update({ where: { id: userId }, data: { password: hashed } });
-    }
-
-    return this.hideTrackingToken(updatedUser);
+    return this.hideTrackingToken(updatedRestaurant);
   }
 
   private async expireTrialIfNeeded<
     T extends {
       id: number;
-      role: UserRole;
-      subscriptionStatus: SubscriptionStatus;
+      subscriptionStatus: string;
       trialEndsAt: Date | null;
     },
-  >(user: T): Promise<T> {
+  >(restaurant: T): Promise<T> {
     if (
-      user.role !== UserRole.RESTAURANT ||
-      user.subscriptionStatus !== SubscriptionStatus.TRIAL ||
-      !user.trialEndsAt ||
-      user.trialEndsAt.getTime() >= Date.now()
+      restaurant.subscriptionStatus !== SubscriptionStatus.TRIAL ||
+      !restaurant.trialEndsAt ||
+      restaurant.trialEndsAt.getTime() >= Date.now()
     ) {
-      return user;
+      return restaurant;
     }
 
-    await this.prisma.user.update({
-      where: { id: user.id },
+    await this.prisma.restaurant.update({
+      where: { id: restaurant.id },
       data: { subscriptionStatus: SubscriptionStatus.OVERDUE },
     });
 
-    return { ...user, subscriptionStatus: SubscriptionStatus.OVERDUE };
+    return { ...restaurant, subscriptionStatus: SubscriptionStatus.OVERDUE };
   }
 }

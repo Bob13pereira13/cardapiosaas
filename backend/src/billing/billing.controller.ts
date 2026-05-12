@@ -8,11 +8,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { BillingService } from './billing.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 
-type AuthenticatedRequest = { user: { id: number; role?: string } };
-type RequestWithIp = AuthenticatedRequest & {
+type AuthenticatedRequest = {
+  user: {
+    id: number;
+    activeRestaurantId: number;
+    isPlatformAdmin?: boolean;
+  };
   ip?: string;
   headers: Record<string, string | string[] | undefined>;
 };
@@ -21,17 +26,20 @@ type RequestWithIp = AuthenticatedRequest & {
 export class BillingController {
   constructor(private billingService: BillingService) {}
 
-  @Post('subscription/:userId')
-  @UseGuards(AuthGuard('jwt'))
+  @Post('subscription/:restaurantId')
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   createSubscription(
-    @Param('userId') userId: string,
+    @Param('restaurantId') restaurantId: string,
     @Body() dto: CreateSubscriptionDto,
-    @Request() req: RequestWithIp,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.billingService.createSubscription(
-      Number(userId),
+      Number(restaurantId),
       dto,
-      req.user,
+      {
+        id: req.user.activeRestaurantId,
+        isPlatformAdmin: req.user.isPlatformAdmin,
+      },
       this.getRemoteIp(req),
     );
   }
@@ -47,7 +55,7 @@ export class BillingController {
     );
   }
 
-  private getRemoteIp(req: RequestWithIp) {
+  private getRemoteIp(req: AuthenticatedRequest) {
     const forwardedFor = req.headers['x-forwarded-for'];
     const raw = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
     return raw?.split(',')[0]?.trim() || req.ip;

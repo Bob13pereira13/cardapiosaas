@@ -50,5 +50,8 @@ export class UpdateProductDto {
   @IsOptional() @IsBoolean() disponibilidadeAtiva?: boolean;
   @IsOptional() @IsString() disponibilidadeInicio?: string | null;
   @IsOptional() @IsString() disponibilidadeFim?: string | null;
-  @IsOptional() @IsArray() @IsInt({ each: true }) disponibilidadeDias?: number[];
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  productionSectorId?: number | null;
 }

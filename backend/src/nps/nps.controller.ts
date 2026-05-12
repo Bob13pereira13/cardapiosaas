@@ -1,18 +1,30 @@
-import { Body, Controller, Get, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { NpsService } from './nps.service';
 
-type AuthenticatedRequest = { user: { id: number } };
+type AuthenticatedRequest = {
+  user: { id: number; activeRestaurantId: number };
+};
 type Period = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM';
 
 @Controller('nps')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
 export class NpsController {
   constructor(private nps: NpsService) {}
 
   @Get('summary')
   getSummary(@Request() req: AuthenticatedRequest) {
-    return this.nps.getSummary(req.user.id);
+    return this.nps.getSummary(req.user.activeRestaurantId);
   }
 
   @Get('responses')
@@ -23,7 +35,7 @@ export class NpsController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
-    return this.nps.getResponses(req.user.id, {
+    return this.nps.getResponses(req.user.activeRestaurantId, {
       period,
       score: score ? Number(score) : undefined,
       dateFrom,
@@ -37,6 +49,6 @@ export class NpsController {
     @Param('id') id: string,
     @Body() body: { reply: string },
   ) {
-    return this.nps.reply(req.user.id, Number(id), body.reply);
+    return this.nps.reply(req.user.activeRestaurantId, Number(id), body.reply);
   }
 }

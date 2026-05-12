@@ -1,49 +1,54 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { SubscriptionStatus, UserRole } from '@prisma/client';
+import { MembershipRole, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-
-const clientSelect = {
-  id: true,
-  nome: true,
-  email: true,
-  slug: true,
-  createdAt: true,
-  isActive: true,
-  plan: true,
-  subscriptionStatus: true,
-  trialEndsAt: true,
-  whatsapp: true,
-  aberto: true,
-  _count: {
-    select: {
-      products: true,
-      orders: true,
-      categories: true,
-    },
-  },
-};
 
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
 
-  findClients() {
-    return this.prisma.user.findMany({
-      where: { role: UserRole.RESTAURANT },
+  async findClients() {
+    const restaurants = await this.prisma.restaurant.findMany({
       orderBy: { createdAt: 'desc' },
-      select: clientSelect,
+      select: {
+        id: true,
+        nome: true,
+        slug: true,
+        createdAt: true,
+        plan: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        whatsapp: true,
+        aberto: true,
+        _count: { select: { products: true, orders: true, categories: true } },
+        memberships: {
+          where: { role: MembershipRole.OWNER, ativo: true },
+          select: {
+            account: { select: { id: true, email: true, isActive: true } },
+          },
+          take: 1,
+        },
+      },
+    });
+    return restaurants.map((r) => {
+      const { memberships, ...rest } = r;
+      const owner = memberships[0]?.account;
+      return {
+        ...rest,
+        email: owner?.email ?? null,
+        isActive: owner?.isActive ?? false,
+      };
     });
   }
 
   async metrics() {
     const [clientes, pedidos, pagamentosPendentes, pagamentosPagos] =
       await Promise.all([
-        this.prisma.user.count({ where: { role: UserRole.RESTAURANT } }),
+        this.prisma.restaurant.count(),
         this.prisma.order.count(),
-        this.prisma.order.count({ where: { paymentStatus: 'PENDING' } }),
-        this.prisma.order.aggregate({
-          where: { paymentStatus: 'PAID' },
-          _sum: { total: true },
+        this.prisma.payment.count({ where: { status: 'PENDING' } }),
+        this.prisma.payment.aggregate({
+          where: { status: 'CONFIRMED' },
+          _sum: { valor: true },
         }),
       ]);
 
@@ -51,7 +56,7 @@ export class AdminService {
       clientes,
       pedidos,
       pagamentosPendentes,
-      receitaProcessada: pagamentosPagos._sum.total ?? 0,
+      receitaProcessada: Number(pagamentosPagos._sum.valor ?? 0),
     };
   }
 
@@ -63,33 +68,34 @@ export class AdminService {
         id: true,
         orderNumber: true,
         total: true,
-        paymentStatus: true,
-        paymentMethod: true,
         createdAt: true,
-        user: { select: { id: true, nome: true, email: true } },
+        restaurant: { select: { id: true, nome: true } },
       },
     });
   }
 
   subscriptions() {
-    return this.prisma.user.findMany({
-      where: { role: UserRole.RESTAURANT },
+    return this.prisma.restaurant.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         nome: true,
-        email: true,
         plan: true,
         subscriptionStatus: true,
         trialEndsAt: true,
         asaasSubscriptionId: true,
         createdAt: true,
+        memberships: {
+          where: { role: MembershipRole.OWNER, ativo: true },
+          select: { account: { select: { email: true } } },
+          take: 1,
+        },
       },
     });
   }
 
   async logs() {
-    const [orders, clients] = await Promise.all([
+    const [orders, restaurants] = await Promise.all([
       this.prisma.order.findMany({
         orderBy: { createdAt: 'desc' },
         take: 30,
@@ -97,53 +103,101 @@ export class AdminService {
           id: true,
           orderNumber: true,
           orderStatus: true,
-          paymentStatus: true,
           createdAt: true,
-          user: { select: { nome: true } },
+          restaurant: { select: { nome: true } },
         },
       }),
-      this.prisma.user.findMany({
-        where: { role: UserRole.RESTAURANT },
+      this.prisma.restaurant.findMany({
         orderBy: { createdAt: 'desc' },
         take: 10,
-        select: { id: true, nome: true, email: true, createdAt: true },
+        select: {
+          id: true,
+          nome: true,
+          createdAt: true,
+          memberships: {
+            where: { role: MembershipRole.OWNER, ativo: true },
+            select: { account: { select: { email: true } } },
+            take: 1,
+          },
+        },
       }),
     ]);
 
     return {
       orders,
-      clients,
+      clients: restaurants.map((r) => ({
+        id: r.id,
+        nome: r.nome,
+        email: r.memberships[0]?.account?.email ?? null,
+        createdAt: r.createdAt,
+      })),
     };
   }
 
   async findClient(id: number) {
-    const client = await this.prisma.user.findFirst({
-      where: { id, role: UserRole.RESTAURANT },
-      select: clientSelect,
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id },
+      select: {
+        id: true,
+        nome: true,
+        slug: true,
+        createdAt: true,
+        plan: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        whatsapp: true,
+        aberto: true,
+        _count: { select: { products: true, orders: true, categories: true } },
+        memberships: {
+          where: { role: MembershipRole.OWNER, ativo: true },
+          select: {
+            account: { select: { id: true, email: true, isActive: true } },
+          },
+          take: 1,
+        },
+      },
     });
 
-    if (!client) {
-      throw new NotFoundException('Cliente nao encontrado.');
+    if (!restaurant) {
+      throw new NotFoundException('Cliente não encontrado.');
     }
 
-    return client;
+    const { memberships, ...rest } = restaurant;
+    const owner = memberships[0]?.account;
+    return {
+      ...rest,
+      email: owner?.email ?? null,
+      isActive: owner?.isActive ?? false,
+    };
   }
 
   testAsaas() {
     return {
       ok: true,
-      mode: process.env.ASAAS_API_URL?.includes('sandbox') ? 'sandbox' : 'production',
+      mode: process.env.ASAAS_API_URL?.includes('sandbox')
+        ? 'sandbox'
+        : 'production',
     };
   }
 
   async updateClientStatus(id: number, isActive: boolean) {
     await this.findClient(id);
 
-    return this.prisma.user.update({
-      where: { id },
-      data: { isActive },
-      select: clientSelect,
+    const ownerMembership = await this.prisma.membership.findFirst({
+      where: { restaurantId: id, role: MembershipRole.OWNER, ativo: true },
+      select: { accountId: true },
     });
+
+    if (!ownerMembership) {
+      throw new NotFoundException('Proprietário não encontrado.');
+    }
+
+    await this.prisma.account.update({
+      where: { id: ownerMembership.accountId },
+      data: { isActive },
+    });
+
+    return this.findClient(id);
   }
 
   async updateClientSubscription(
@@ -152,7 +206,7 @@ export class AdminService {
   ) {
     await this.findClient(id);
 
-    return this.prisma.user.update({
+    return this.prisma.restaurant.update({
       where: { id },
       data: {
         ...(data.plan !== undefined ? { plan: data.plan } : {}),
@@ -160,7 +214,13 @@ export class AdminService {
           ? { subscriptionStatus: data.subscriptionStatus }
           : {}),
       },
-      select: clientSelect,
+      select: {
+        id: true,
+        nome: true,
+        plan: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+      },
     });
   }
 }

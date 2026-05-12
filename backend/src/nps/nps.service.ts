@@ -1,15 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Period = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM';
 
 function getRange(period: Period, dateFrom?: string, dateTo?: string) {
   const now = new Date();
-  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
   if (period === 'WEEK') start.setDate(start.getDate() - 6);
   if (period === 'MONTH') start.setDate(start.getDate() - 29);
   if ((period === 'CUSTOM' || dateFrom) && dateFrom) {
-    const d = new Date(dateFrom); d.setHours(0, 0, 0, 0); start.setTime(d.getTime());
+    const d = new Date(dateFrom);
+    d.setHours(0, 0, 0, 0);
+    start.setTime(d.getTime());
   }
   const end = dateTo ? new Date(dateTo) : new Date(now);
   if (dateTo) end.setHours(23, 59, 59, 999);
@@ -20,14 +24,15 @@ function getRange(period: Period, dateFrom?: string, dateTo?: string) {
 export class NpsService {
   constructor(private prisma: PrismaService) {}
 
-  async getSummary(userId: number) {
+  async getSummary(restaurantId: number) {
     const responses = await this.prisma.npsResponse.findMany({
-      where: { userId },
+      where: { restaurantId },
       select: { score: true },
     });
 
     const total = responses.length;
-    if (total === 0) return { averageScore: 0, totalResponses: 0, distribution: {} };
+    if (total === 0)
+      return { averageScore: 0, totalResponses: 0, distribution: {} };
 
     const distribution: Record<number, number> = {};
     for (let i = 1; i <= 10; i++) distribution[i] = 0;
@@ -44,9 +49,21 @@ export class NpsService {
     };
   }
 
-  async getResponses(userId: number, params: { period?: Period; score?: number; dateFrom?: string; dateTo?: string }) {
-    const createdAt = getRange(params.period ?? 'MONTH', params.dateFrom, params.dateTo);
-    const where: Record<string, unknown> = { userId, createdAt };
+  async getResponses(
+    restaurantId: number,
+    params: {
+      period?: Period;
+      score?: number;
+      dateFrom?: string;
+      dateTo?: string;
+    },
+  ) {
+    const createdAt = getRange(
+      params.period ?? 'MONTH',
+      params.dateFrom,
+      params.dateTo,
+    );
+    const where: Prisma.NpsResponseWhereInput = { restaurantId, createdAt };
     if (params.score) where.score = params.score;
 
     return this.prisma.npsResponse.findMany({
@@ -59,8 +76,10 @@ export class NpsService {
     });
   }
 
-  async reply(userId: number, id: number, replyText: string) {
-    const response = await this.prisma.npsResponse.findFirst({ where: { id, userId } });
+  async reply(restaurantId: number, id: number, replyText: string) {
+    const response = await this.prisma.npsResponse.findFirst({
+      where: { id, restaurantId },
+    });
     if (!response) throw new NotFoundException('Avaliacao nao encontrada.');
 
     return this.prisma.npsResponse.update({

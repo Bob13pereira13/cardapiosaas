@@ -18,7 +18,9 @@ export class UpdateMeDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\+?\d{10,15}$/, { message: 'WhatsApp inválido. Use apenas números (10-15 dígitos).' })
+  @Matches(/^\+?\d{10,15}$/, {
+    message: 'WhatsApp inválido. Use apenas números (10-15 dígitos).',
+  })
   whatsapp?: string;
 
   @IsOptional() @IsString() @MinLength(2) @MaxLength(80) slug?: string;
@@ -41,12 +43,16 @@ export class UpdateMeDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^$|^GTM-[A-Z0-9]+$/i, { message: 'GTM ID deve estar no formato GTM-XXXX.' })
+  @Matches(/^$|^GTM-[A-Z0-9]+$/i, {
+    message: 'GTM ID deve estar no formato GTM-XXXX.',
+  })
   gtmId?: string;
 
   @IsOptional()
   @IsString()
-  @Matches(/^$|^G-[A-Z0-9]+$/i, { message: 'GA4 Measurement ID deve estar no formato G-XXXX.' })
+  @Matches(/^$|^G-[A-Z0-9]+$/i, {
+    message: 'GA4 Measurement ID deve estar no formato G-XXXX.',
+  })
   ga4MeasurementId?: string;
 
   @IsOptional()
@@ -68,7 +74,11 @@ export class UpdateMeDto {
   @IsOptional() @IsBoolean() aceitaRetirada?: boolean;
   @IsOptional() @IsBoolean() aceitaMesa?: boolean;
   @IsOptional() @IsString() tempoEstimadoEntrega?: string;
-  @IsOptional() @IsNumber() @Type(() => Number) @Min(0) pedidoMinimoEntregaGratis?: number;
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  pedidoMinimoEntregaGratis?: number;
   @IsOptional() @IsNumber() @Type(() => Number) @Min(0) raioEntregaKm?: number;
 
   // Pagamentos presenciais
@@ -79,7 +89,10 @@ export class UpdateMeDto {
   @IsOptional() @IsString() chavePix?: string;
 
   // Horários por dia
-  @IsOptional() businessHours?: Record<string, { active: boolean; open: string; close: string }>;
+  @IsOptional() businessHours?: Record<
+    string,
+    { active: boolean; open: string; close: string }
+  >;
 
   // Aparência do cardápio
   @IsOptional() @IsString() textoBoasVindas?: string;

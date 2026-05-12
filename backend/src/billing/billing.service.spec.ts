@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { SubscriptionStatus, UserRole } from '@prisma/client';
+import { MembershipRole, SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AsaasBillingService } from './asaas-billing.service';
 import { BillingService } from './billing.service';
@@ -7,10 +7,14 @@ import { MailService } from '../mail/mail.service';
 
 describe('BillingService', () => {
   const prisma = {
-    user: {
+    restaurant: {
+      findUnique: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+    },
+    account: {
+      update: jest.fn(),
     },
   };
   const asaas = {
@@ -41,21 +45,32 @@ describe('BillingService', () => {
 
   it('creates an Asaas customer and monthly subscription for a restaurant', async () => {
     const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    prisma.user.findFirst.mockResolvedValue({
+    prisma.restaurant.findUnique.mockResolvedValue({
       id: 10,
-      role: UserRole.RESTAURANT,
       nome: 'Restaurante Teste',
-      email: 'teste@example.com',
-      whatsapp: '11999999999',
       plan: 'PRO',
       trialEndsAt,
-      asaasCustomerId: null,
+      memberships: [
+        {
+          account: {
+            id: 1,
+            nome: 'Dono Teste',
+            email: 'teste@example.com',
+            whatsapp: '11999999999',
+            asaasCustomerId: null,
+          },
+          role: MembershipRole.OWNER,
+        },
+      ],
     });
     asaas.createCustomer.mockResolvedValue({ id: 'cus_123' });
     asaas.createSubscription.mockResolvedValue({ id: 'sub_123' });
-    prisma.user.update.mockResolvedValue({
-      id: 10,
+    prisma.account.update.mockResolvedValue({
+      id: 1,
       asaasCustomerId: 'cus_123',
+    });
+    prisma.restaurant.update.mockResolvedValue({
+      id: 10,
       asaasSubscriptionId: 'sub_123',
       subscriptionStatus: SubscriptionStatus.TRIAL,
     });
@@ -78,18 +93,19 @@ describe('BillingService', () => {
         externalReference: '10',
       }),
     );
-    expect(prisma.user.update).toHaveBeenCalledTimes(1);
+    expect(prisma.restaurant.update).toHaveBeenCalledTimes(1);
   });
 
   it('updates subscription status from Asaas payment webhook', async () => {
     process.env.ASAAS_WEBHOOK_TOKEN = 'secret-token';
+    prisma.restaurant.findFirst.mockResolvedValue(null);
 
     await service.handleAsaasWebhook('secret-token', {
       event: 'PAYMENT_OVERDUE',
       payment: { subscription: 'sub_123' },
     });
 
-    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+    expect(prisma.restaurant.updateMany).toHaveBeenCalledWith({
       where: { asaasSubscriptionId: 'sub_123' },
       data: { subscriptionStatus: SubscriptionStatus.OVERDUE },
     });

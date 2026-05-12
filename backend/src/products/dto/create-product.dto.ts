@@ -50,5 +50,8 @@ export class CreateProductDto {
   @IsOptional() @IsBoolean() disponibilidadeAtiva?: boolean;
   @IsOptional() @IsString() disponibilidadeInicio?: string;
   @IsOptional() @IsString() disponibilidadeFim?: string;
-  @IsOptional() @IsArray() @IsInt({ each: true }) disponibilidadeDias?: number[];
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  productionSectorId?: number;
 }

@@ -31,6 +31,17 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { AuditModule } from './audit/audit.module';
 import { TeamModule } from './team/team.module';
 import { ComplementosModule } from './complementos/complementos.module';
+import { RestaurantsModule } from './restaurants/restaurants.module';
+import { ProductionSectorsModule } from './production-sectors/production-sectors.module';
+import { PromotionsModule } from './promotions/promotions.module';
+import { TabsModule } from './tabs/tabs.module';
+import { DeliveryZonesModule } from './delivery-zones/delivery-zones.module';
+import { DeliveryAttemptsModule } from './delivery-attempts/delivery-attempts.module';
+import { EncryptionModule } from './encryption/encryption.module';
+import { MarketplaceConnectorsModule } from './marketplace-connectors/marketplace-connectors.module';
+import { MarketplaceIntegrationsModule } from './marketplace-integrations/marketplace-integrations.module';
+import { CashRegisterModule } from './cash-register/cash-register.module';
+import { FiadoModule } from './fiado/fiado.module';
 
 @Module({
   imports: [
@@ -63,6 +74,17 @@ import { ComplementosModule } from './complementos/complementos.module';
     AuditModule,
     TeamModule,
     ComplementosModule,
+    RestaurantsModule,
+    ProductionSectorsModule,
+    PromotionsModule,
+    TabsModule,
+    DeliveryZonesModule,
+    DeliveryAttemptsModule,
+    EncryptionModule,
+    MarketplaceConnectorsModule,
+    MarketplaceIntegrationsModule,
+    CashRegisterModule,
+    FiadoModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

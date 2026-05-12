@@ -62,24 +62,29 @@ export class ComplementosService {
     };
   }
 
-  findComplementos(userId: number) {
+  findComplementos(restaurantId: number) {
     return this.prisma.optionGroup
       .findMany({
-        where: { userId },
+        where: { restaurantId },
         orderBy: [{ displayOrder: 'asc' }, { id: 'desc' }],
         include: {
           options: { orderBy: { displayOrder: 'asc' } },
-          productLinks: { include: { product: { select: { id: true, nome: true } } } },
+          productLinks: {
+            include: { product: { select: { id: true, nome: true } } },
+          },
         },
       })
       .then((groups) => groups.map((group) => this.toComplemento(group)));
   }
 
-  async createComplemento(userId: number, dto: Required<Pick<ComplementoDto, 'nome'>> & ComplementoDto) {
+  async createComplemento(
+    restaurantId: number,
+    dto: Required<Pick<ComplementoDto, 'nome'>> & ComplementoDto,
+  ) {
     const maxSelections = dto.maxSelecoes ?? (dto.multiplaEscolha ? 99 : 1);
     const group = await this.prisma.optionGroup.create({
       data: {
-        userId,
+        restaurantId,
         nome: dto.nome,
         descricao: dto.descricao,
         required: dto.obrigatorio ?? false,
@@ -90,25 +95,36 @@ export class ComplementosService {
         ativo: dto.ativo ?? true,
         displayOrder: dto.ordem ?? 0,
       },
-      include: { options: true, productLinks: { include: { product: { select: { id: true, nome: true } } } } },
+      include: {
+        options: true,
+        productLinks: {
+          include: { product: { select: { id: true, nome: true } } },
+        },
+      },
     });
     return this.toComplemento(group);
   }
 
-  async getComplemento(userId: number, id: number) {
+  async getComplemento(restaurantId: number, id: number) {
     const group = await this.prisma.optionGroup.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
       include: {
         options: { orderBy: { displayOrder: 'asc' } },
-        productLinks: { include: { product: { select: { id: true, nome: true } } } },
+        productLinks: {
+          include: { product: { select: { id: true, nome: true } } },
+        },
       },
     });
     if (!group) throw new NotFoundException('Complemento nao encontrado.');
     return this.toComplemento(group);
   }
 
-  async updateComplemento(userId: number, id: number, dto: ComplementoDto) {
-    await this.getComplemento(userId, id);
+  async updateComplemento(
+    restaurantId: number,
+    id: number,
+    dto: ComplementoDto,
+  ) {
+    await this.getComplemento(restaurantId, id);
     const data: Record<string, unknown> = {};
     if (dto.nome !== undefined) data.nome = dto.nome;
     if (dto.descricao !== undefined) data.descricao = dto.descricao;
@@ -117,39 +133,53 @@ export class ComplementosService {
     if (dto.maxSelecoes !== undefined) data.maxSelections = dto.maxSelecoes;
     if (dto.ativo !== undefined) data.ativo = dto.ativo;
     if (dto.ordem !== undefined) data.displayOrder = dto.ordem;
-    if (dto.multiplaEscolha === false && dto.maxSelecoes === undefined) data.maxSelections = 1;
+    if (dto.multiplaEscolha === false && dto.maxSelecoes === undefined)
+      data.maxSelections = 1;
     const group = await this.prisma.optionGroup.update({
       where: { id },
       data,
-      include: { options: true, productLinks: { include: { product: { select: { id: true, nome: true } } } } },
+      include: {
+        options: true,
+        productLinks: {
+          include: { product: { select: { id: true, nome: true } } },
+        },
+      },
     });
     return this.toComplemento(group);
   }
 
-  async deleteComplemento(userId: number, id: number) {
-    await this.getComplemento(userId, id);
+  async deleteComplemento(restaurantId: number, id: number) {
+    await this.getComplemento(restaurantId, id);
     await this.prisma.optionGroup.delete({ where: { id } });
     return { ok: true };
   }
 
-  toggleComplemento(userId: number, id: number) {
-    return this.getComplemento(userId, id).then((group) =>
-      this.updateComplemento(userId, id, { ativo: !group.ativo }),
+  toggleComplemento(restaurantId: number, id: number) {
+    return this.getComplemento(restaurantId, id).then((group) =>
+      this.updateComplemento(restaurantId, id, { ativo: !group.ativo }),
     );
   }
 
-  findOpcoes(userId: number) {
+  findOpcoes(restaurantId: number) {
     return this.prisma.option
       .findMany({
-        where: { optionGroup: { userId } },
+        where: { optionGroup: { restaurantId } },
         orderBy: [{ displayOrder: 'asc' }, { id: 'desc' }],
         include: { optionGroup: { select: { id: true, nome: true } } },
       })
-      .then((options) => options.map((option) => ({ ...this.toOpcao(option), complemento: option.optionGroup })));
+      .then((options) =>
+        options.map((option) => ({
+          ...this.toOpcao(option),
+          complemento: option.optionGroup,
+        })),
+      );
   }
 
-  async createOpcao(userId: number, dto: Required<Pick<OpcaoDto, 'complementoId' | 'nome'>> & OpcaoDto) {
-    await this.getComplemento(userId, dto.complementoId);
+  async createOpcao(
+    restaurantId: number,
+    dto: Required<Pick<OpcaoDto, 'complementoId' | 'nome'>> & OpcaoDto,
+  ) {
+    await this.getComplemento(restaurantId, dto.complementoId);
     const option = await this.prisma.option.create({
       data: {
         optionGroupId: dto.complementoId,
@@ -165,16 +195,16 @@ export class ComplementosService {
     return this.toOpcao(option);
   }
 
-  async getOpcao(userId: number, id: number) {
+  async getOpcao(restaurantId: number, id: number) {
     const option = await this.prisma.option.findFirst({
-      where: { id, optionGroup: { userId } },
+      where: { id, optionGroup: { restaurantId } },
     });
     if (!option) throw new NotFoundException('Opcao nao encontrada.');
     return this.toOpcao(option);
   }
 
-  async updateOpcao(userId: number, id: number, dto: OpcaoDto) {
-    await this.getOpcao(userId, id);
+  async updateOpcao(restaurantId: number, id: number, dto: OpcaoDto) {
+    await this.getOpcao(restaurantId, id);
     const data: Record<string, unknown> = {};
     if (dto.nome !== undefined) data.nome = dto.nome;
     if (dto.descricao !== undefined) data.descricao = dto.descricao;
@@ -187,15 +217,15 @@ export class ComplementosService {
     return this.toOpcao(option);
   }
 
-  async deleteOpcao(userId: number, id: number) {
-    await this.getOpcao(userId, id);
+  async deleteOpcao(restaurantId: number, id: number) {
+    await this.getOpcao(restaurantId, id);
     await this.prisma.option.delete({ where: { id } });
     return { ok: true };
   }
 
-  toggleOpcao(userId: number, id: number) {
-    return this.getOpcao(userId, id).then((option) =>
-      this.updateOpcao(userId, id, { ativo: !option.ativo }),
+  toggleOpcao(restaurantId: number, id: number) {
+    return this.getOpcao(restaurantId, id).then((option) =>
+      this.updateOpcao(restaurantId, id, { ativo: !option.ativo }),
     );
   }
 }

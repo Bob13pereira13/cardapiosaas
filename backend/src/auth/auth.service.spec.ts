@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -11,6 +12,17 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        {
+          provide: PrismaService,
+          useValue: {
+            account: { findUnique: jest.fn(), update: jest.fn() },
+            membership: {
+              findFirst: jest.fn(),
+              update: jest.fn(),
+              findMany: jest.fn(),
+            },
+          },
+        },
         {
           provide: UsersService,
           useValue: {},

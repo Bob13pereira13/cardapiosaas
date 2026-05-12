@@ -11,13 +11,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 
-type AuthenticatedRequest = { user: { id: number } };
+type AuthenticatedRequest = {
+  user: { id: number; accountId: number; activeRestaurantId: number };
+};
 
 @Controller()
 export class OrdersController {
@@ -51,47 +54,56 @@ export class OrdersController {
   }
 
   @Get('financial/summary')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   financialSummary(
     @Request() req: AuthenticatedRequest,
     @Query('period') period: 'TODAY' | 'WEEK' | 'MONTH' = 'TODAY',
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
-    return this.orders.financialSummary(req.user.id, { period, dateFrom, dateTo });
+    return this.orders.financialSummary(req.user.activeRestaurantId, {
+      period,
+      dateFrom,
+      dateTo,
+    });
   }
 
   @Post('orders/manual')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   createManual(
     @Request() req: AuthenticatedRequest,
     @Body() dto: CreateManualOrderDto,
   ) {
-    return this.orders.createManualOrder(req.user.id, dto);
+    return this.orders.createManualOrder(req.user.activeRestaurantId, dto);
   }
 
   @Get('orders')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   findAll(
     @Request() req: AuthenticatedRequest,
     @Query() query: ListOrdersQueryDto,
   ) {
-    return this.orders.findAll(req.user.id, query);
+    return this.orders.findAll(req.user.activeRestaurantId, query);
   }
 
   @Get('orders/:id')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   findOne(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
-    return this.orders.findOne(Number(id), req.user.id);
+    return this.orders.findOne(Number(id), req.user.activeRestaurantId);
   }
 
   @Patch('orders/:id/status')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
   updateStatus(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.orders.updateStatus(Number(id), req.user.id, dto.orderStatus);
+    return this.orders.updateStatus(
+      Number(id),
+      req.user.activeRestaurantId,
+      dto.orderStatus,
+      req.user.accountId,
+    );
   }
 }

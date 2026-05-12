@@ -5,9 +5,9 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CustomersService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(userId: number) {
+  async findAll(restaurantId: number) {
     const customers = await this.prisma.customer.findMany({
-      where: { userId },
+      where: { restaurantId },
       orderBy: [{ lastOrderAt: 'desc' }, { updatedAt: 'desc' }],
       include: {
         orders: {
@@ -35,12 +35,16 @@ export class CustomersService {
     }));
   }
 
-  async update(userId: number, customerId: number, data: { tags?: string[] }) {
+  async update(
+    restaurantId: number,
+    customerId: number,
+    data: { tags?: string[] },
+  ) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, userId },
+      where: { id: customerId, restaurantId },
       select: { id: true },
     });
-    if (!customer) throw new NotFoundException('Cliente nÃ£o encontrado.');
+    if (!customer) throw new NotFoundException('Cliente não encontrado.');
 
     return this.prisma.customer.update({
       where: { id: customer.id },
@@ -48,9 +52,9 @@ export class CustomersService {
     });
   }
 
-  async findOrders(userId: number, customerId: number) {
+  async findOrders(restaurantId: number, customerId: number) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, userId },
+      where: { id: customerId, restaurantId },
       select: {
         id: true,
         name: true,
@@ -60,10 +64,10 @@ export class CustomersService {
       },
     });
 
-    if (!customer) throw new NotFoundException('Cliente nÃ£o encontrado.');
+    if (!customer) throw new NotFoundException('Cliente não encontrado.');
 
     const orders = await this.prisma.order.findMany({
-      where: { customerId, userId },
+      where: { customerId, restaurantId },
       orderBy: { createdAt: 'desc' },
       include: { items: true },
     });
@@ -77,9 +81,9 @@ export class CustomersService {
     };
   }
 
-  async anonymize(userId: number, customerId: number) {
+  async anonymize(restaurantId: number, customerId: number) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, userId },
+      where: { id: customerId, restaurantId },
     });
     if (!customer) throw new NotFoundException('Cliente não encontrado.');
 
@@ -98,9 +102,9 @@ export class CustomersService {
     return { anonymized: true };
   }
 
-  async exportGdpr(userId: number, customerId: number) {
+  async exportGdpr(restaurantId: number, customerId: number) {
     const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, userId },
+      where: { id: customerId, restaurantId },
       include: {
         orders: {
           include: { items: true },
@@ -111,12 +115,12 @@ export class CustomersService {
     return customer;
   }
 
-  async findInactive(userId: number, daysSince: number) {
+  async findInactive(restaurantId: number, daysSince: number) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - daysSince);
     const customers = await this.prisma.customer.findMany({
       where: {
-        userId,
+        restaurantId,
         OR: [
           { lastOrderAt: { lt: cutoff } },
           { lastOrderAt: null, createdAt: { lt: cutoff } },
@@ -133,17 +137,26 @@ export class CustomersService {
     }));
   }
 
-  async exportCsv(userId: number) {
-    const customers = await this.findAll(userId);
+  async exportCsv(restaurantId: number) {
+    const customers = await this.findAll(restaurantId);
     const lines = [
-      ['Nome', 'Telefone', 'Documento', 'Pedidos', 'Total gasto', 'Ultimo pedido'],
+      [
+        'Nome',
+        'Telefone',
+        'Documento',
+        'Pedidos',
+        'Total gasto',
+        'Ultimo pedido',
+      ],
       ...customers.map((customer) => [
         customer.name,
         customer.phone,
         customer.document ?? '',
         String(customer.ordersCount),
         String(customer.totalSpent),
-        customer.lastOrderAt ? new Date(customer.lastOrderAt).toISOString() : '',
+        customer.lastOrderAt
+          ? new Date(customer.lastOrderAt).toISOString()
+          : '',
       ]),
     ];
 

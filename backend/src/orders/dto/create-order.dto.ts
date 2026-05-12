@@ -11,6 +11,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { OrderSource } from '@prisma/client';
 import { DeliveryType, PaymentMethod } from '@prisma/client';
 
 export class SelectedOptionDto {
@@ -104,6 +105,20 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   couponCode?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  tableId?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(9)
+  deliveryCep?: string;
+
+  @IsOptional()
+  @IsEnum(OrderSource)
+  source?: OrderSource;
 
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)

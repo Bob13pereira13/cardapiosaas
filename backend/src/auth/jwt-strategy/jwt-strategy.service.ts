@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { UserRole } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -19,66 +18,38 @@ export class JwtStrategyService extends PassportStrategy(Strategy, 'jwt') {
 
   async validate(
     request: { path?: string; url?: string },
-    payload: { sub: number; email: string; role?: string },
+    payload: { accountId?: number; activeRestaurantId?: number; role?: string },
   ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        isActive: true,
-        subscriptionStatus: true,
-      },
+    const account = await this.prisma.account.findUnique({
+      where: { id: payload.accountId },
+      select: { id: true, email: true, isActive: true },
     });
-
-    if (!user || !user.isActive) {
+    if (!account || !account.isActive) {
       throw new UnauthorizedException('Conta inativa.');
     }
 
-    const subscriptionStatus = await this.expireTrialIfNeeded(user);
-    const path = request.path ?? request.url ?? '';
-    const canReadOwnStatus = path === '/users/me';
-
-    if (
-      user.role === UserRole.RESTAURANT &&
-      subscriptionStatus === 'CANCELED' &&
-      !canReadOwnStatus
-    ) {
-      throw new UnauthorizedException('Assinatura indisponivel.');
+    if (payload.activeRestaurantId) {
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { id: payload.activeRestaurantId },
+        select: { subscriptionStatus: true },
+      });
+      const path = request.path ?? request.url ?? '';
+      if (
+        restaurant?.subscriptionStatus === 'CANCELED' &&
+        path !== '/users/me' &&
+        path !== '/restaurants/me'
+      ) {
+        throw new UnauthorizedException('Assinatura indisponivel.');
+      }
     }
 
     return {
-      id: user.id,
-      email: user.email,
-      role: user.role,
+      sub: account.id,
+      id: account.id,
+      accountId: account.id,
+      activeRestaurantId: payload.activeRestaurantId ?? null,
+      role: payload.role ?? null,
+      email: account.email,
     };
-  }
-
-  private async expireTrialIfNeeded(user: {
-    id: number;
-    role: UserRole;
-    subscriptionStatus: string;
-  }) {
-    const fullUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { trialEndsAt: true },
-    });
-
-    if (
-      user.role !== UserRole.RESTAURANT ||
-      user.subscriptionStatus !== 'TRIAL' ||
-      !fullUser?.trialEndsAt ||
-      fullUser.trialEndsAt.getTime() >= Date.now()
-    ) {
-      return user.subscriptionStatus;
-    }
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { subscriptionStatus: 'OVERDUE' },
-    });
-
-    return 'OVERDUE';
   }
 }

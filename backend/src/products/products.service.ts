@@ -4,7 +4,10 @@ import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async create(data: {
     nome: string;
@@ -19,11 +22,12 @@ export class ProductsService {
     imagem?: string;
     disponivel?: boolean;
     categoryId?: number;
-    userId: number;
+    restaurantId: number;
+    accountId?: number;
     disponibilidadeAtiva?: boolean;
     disponibilidadeInicio?: string;
     disponibilidadeFim?: string;
-    disponibilidadeDias?: number[];
+    productionSectorId?: number;
   }) {
     const product = await this.prisma.product.create({
       data: {
@@ -39,23 +43,30 @@ export class ProductsService {
         imagem: data.imagem,
         disponivel: data.disponivel ?? true,
         categoryId: data.categoryId,
-        userId: data.userId,
+        restaurantId: data.restaurantId,
         disponibilidadeAtiva: data.disponibilidadeAtiva ?? false,
         disponibilidadeInicio: data.disponibilidadeInicio,
         disponibilidadeFim: data.disponibilidadeFim,
-        disponibilidadeDias: data.disponibilidadeDias ? { set: data.disponibilidadeDias } : undefined,
+        productionSectorId: data.productionSectorId,
       },
     });
-    void this.audit.log(data.userId, 'PRODUCT_CREATE', 'Product', product.id, { nome: data.nome });
+    void this.audit.log(
+      data.restaurantId,
+      'PRODUCT_CREATE',
+      'Product',
+      product.id,
+      { nome: data.nome },
+      data.accountId,
+    );
     return product;
   }
 
-  async findByUser(userId: number, page = 1, limit = 20) {
+  async findByRestaurant(restaurantId: number, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
-        where: { userId },
+        where: { restaurantId },
         include: {
           category: true,
           optionGroups: {
@@ -71,7 +82,7 @@ export class ProductsService {
         take: limit,
         orderBy: [{ displayOrder: 'asc' }, { id: 'desc' }],
       }),
-      this.prisma.product.count({ where: { userId } }),
+      this.prisma.product.count({ where: { restaurantId } }),
     ]);
 
     return {
@@ -85,7 +96,7 @@ export class ProductsService {
 
   async update(
     id: number,
-    userId: number,
+    restaurantId: number,
     data: {
       nome?: string;
       descricao?: string;
@@ -102,56 +113,118 @@ export class ProductsService {
       disponibilidadeAtiva?: boolean;
       disponibilidadeInicio?: string | null;
       disponibilidadeFim?: string | null;
-      disponibilidadeDias?: number[];
+      productionSectorId?: number | null;
     },
   ) {
-    const { disponibilidadeDias, ...rest } = data;
     return this.prisma.product.updateMany({
-      where: { id, userId },
-      data: {
-        ...rest,
-        ...(disponibilidadeDias !== undefined ? { disponibilidadeDias: { set: disponibilidadeDias } } : {}),
-      },
+      where: { id, restaurantId },
+      data,
     });
   }
 
-  async delete(id: number, userId: number) {
-    const result = await this.prisma.product.deleteMany({ where: { id, userId } });
-    if (result.count > 0) void this.audit.log(userId, 'PRODUCT_DELETE', 'Product', id);
+  async replaceAvailability(
+    productId: number,
+    restaurantId: number,
+    slots: { dayOfWeek: number; startTime: string; endTime: string }[],
+  ) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, restaurantId },
+    });
+    if (!product) throw new NotFoundException('Produto não encontrado.');
+    await this.prisma.$transaction([
+      this.prisma.productAvailability.deleteMany({ where: { productId } }),
+      ...(slots.length > 0
+        ? [
+            this.prisma.productAvailability.createMany({
+              data: slots.map((s) => ({ productId, ...s })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
+    return this.prisma.productAvailability.findMany({
+      where: { productId },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+    });
+  }
+
+  async delete(id: number, restaurantId: number, accountId?: number) {
+    const result = await this.prisma.product.deleteMany({
+      where: { id, restaurantId },
+    });
+    if (result.count > 0)
+      void this.audit.log(
+        restaurantId,
+        'PRODUCT_DELETE',
+        'Product',
+        id,
+        undefined,
+        accountId,
+      );
     return result;
   }
 
-  async linkComplemento(productId: number, complementoId: number, userId: number, ordem = 0) {
-    await this.verifyProductAndComplement(productId, complementoId, userId);
+  async linkComplemento(
+    productId: number,
+    complementoId: number,
+    restaurantId: number,
+    ordem = 0,
+  ) {
+    await this.verifyProductAndComplement(
+      productId,
+      complementoId,
+      restaurantId,
+    );
     return this.prisma.productComplement.upsert({
-      where: { productId_optionGroupId: { productId, optionGroupId: complementoId } },
+      where: {
+        productId_optionGroupId: { productId, optionGroupId: complementoId },
+      },
       create: { productId, optionGroupId: complementoId, ordem },
       update: { ordem },
     });
   }
 
-  async unlinkComplemento(productId: number, complementoId: number, userId: number) {
-    await this.verifyProductAndComplement(productId, complementoId, userId);
+  async unlinkComplemento(
+    productId: number,
+    complementoId: number,
+    restaurantId: number,
+  ) {
+    await this.verifyProductAndComplement(
+      productId,
+      complementoId,
+      restaurantId,
+    );
     await this.prisma.productComplement.deleteMany({
       where: { productId, optionGroupId: complementoId },
     });
     return { ok: true };
   }
 
-  private async verifyProductAndComplement(productId: number, complementoId: number, userId: number) {
+  private async verifyProductAndComplement(
+    productId: number,
+    complementoId: number,
+    restaurantId: number,
+  ) {
     const [product, complemento] = await Promise.all([
-      this.prisma.product.findFirst({ where: { id: productId, userId }, select: { id: true } }),
-      this.prisma.optionGroup.findFirst({ where: { id: complementoId, userId }, select: { id: true } }),
+      this.prisma.product.findFirst({
+        where: { id: productId, restaurantId },
+        select: { id: true },
+      }),
+      this.prisma.optionGroup.findFirst({
+        where: { id: complementoId, restaurantId },
+        select: { id: true },
+      }),
     ]);
     if (!product) throw new NotFoundException('Produto nao encontrado.');
-    if (!complemento) throw new NotFoundException('Complemento nao encontrado.');
+    if (!complemento)
+      throw new NotFoundException('Complemento nao encontrado.');
   }
 
-  async reorder(userId: number, ids: number[]) {
+  async reorder(restaurantId: number, ids: number[]) {
     await this.prisma.$transaction(
       ids.map((id, index) =>
         this.prisma.product.updateMany({
-          where: { id, userId },
+          where: { id, restaurantId },
           data: { displayOrder: index },
         }),
       ),
@@ -159,17 +232,30 @@ export class ProductsService {
     return { ok: true };
   }
 
-  async duplicate(id: number, userId: number) {
+  async duplicate(id: number, restaurantId: number) {
     const product = await this.prisma.product.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
     });
     if (!product) return null;
-    const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...data } =
-      product as typeof product & { createdAt?: Date; updatedAt?: Date };
     return this.prisma.product.create({
       data: {
-        ...data,
+        restaurantId: product.restaurantId,
         nome: `${product.nome} (cópia)`,
+        descricao: product.descricao,
+        preco: product.preco,
+        precoPromocional: product.precoPromocional,
+        tempoPreparo: product.tempoPreparo,
+        sku: product.sku,
+        emDestaque: product.emDestaque,
+        estoqueAtivo: product.estoqueAtivo,
+        estoque: product.estoque,
+        imagem: product.imagem,
+        disponivel: product.disponivel,
+        categoryId: product.categoryId,
+        displayOrder: product.displayOrder,
+        disponibilidadeAtiva: product.disponibilidadeAtiva,
+        disponibilidadeInicio: product.disponibilidadeInicio,
+        disponibilidadeFim: product.disponibilidadeFim,
       },
     });
   }

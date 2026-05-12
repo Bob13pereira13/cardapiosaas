@@ -27,9 +27,12 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     try {
       const token = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
-      const payload = this.jwt.verify<{ sub: number }>(token);
-      void client.join(`tenant:${payload.sub}`);
-      void client.join(`user:${payload.sub}`);
+      const payload = this.jwt.verify<{
+        sub: number;
+        activeRestaurantId?: number;
+      }>(token);
+      const roomId = payload.activeRestaurantId ?? payload.sub;
+      void client.join(`restaurant:${roomId}`);
     } catch {
       client.disconnect();
     }
@@ -37,26 +40,26 @@ export class OrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect() {}
 
-  emitNewOrder(userId: number, order: unknown) {
-    this.server.to(`tenant:${userId}`).emit('order:new', order);
+  emitNewOrder(restaurantId: number, order: unknown) {
+    this.server.to(`restaurant:${restaurantId}`).emit('order:new', order);
   }
 
-  emitStatusChanged(userId: number, orderId: number, status: string) {
+  emitStatusChanged(restaurantId: number, orderId: number, status: string) {
     this.server
-      .to(`tenant:${userId}`)
+      .to(`restaurant:${restaurantId}`)
       .emit('order:status-changed', { orderId, status });
   }
 
-  emitPaymentConfirmed(userId: number, orderId: number) {
+  emitPaymentConfirmed(restaurantId: number, orderId: number) {
     this.server
-      .to(`tenant:${userId}`)
+      .to(`restaurant:${restaurantId}`)
       .emit('order:payment-confirmed', { orderId });
   }
 
   emitWhatsappPrompt(
-    userId: number,
+    restaurantId: number,
     data: { orderId: number; customerPhone: string; customerName: string },
   ) {
-    this.server.to(`user:${userId}`).emit('whatsapp:prompt', data);
+    this.server.to(`restaurant:${restaurantId}`).emit('whatsapp:prompt', data);
   }
 }

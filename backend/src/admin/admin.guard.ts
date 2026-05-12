@@ -7,7 +7,7 @@ import {
 
 type RequestWithUser = {
   user?: {
-    role?: string;
+    isPlatformAdmin?: boolean;
   };
 };
 
@@ -16,7 +16,7 @@ export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
 
-    if (request.user?.role !== 'ADMIN') {
+    if (!request.user?.isPlatformAdmin) {
       throw new ForbiddenException('Acesso restrito ao administrador.');
     }
 
