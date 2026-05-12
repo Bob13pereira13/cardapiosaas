@@ -150,6 +150,50 @@ enum PromoDiscountType {
   PRECO_FIXO
 }
 
+// ─── ETAPA 9: CAMPAIGNS ──────────────────────────────────────────
+
+enum CampaignTipo {
+  CUPOM_UNICO
+  CUPOM_GENERICO
+  MENSAGEM
+}
+
+enum CampaignChannel {
+  WHATSAPP
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELED
+  FAILED
+}
+
+enum AgendamentoTipo {
+  IMMEDIATE
+  SCHEDULED
+  RECURRING
+  TRIGGER
+}
+
+enum DispatchStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  CONVERTED
+}
+
 // ─── MODELOS ─────────────────────────────────────────────────────
 
 model Category {
@@ -299,6 +343,7 @@ model Order {
   items            OrderItem[]
   history          OrderStatusHistory[]
   deliveryAttempts DeliveryAttempt[]
+  campaignMessages CampaignMessage[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -345,6 +390,7 @@ model Customer {
   loyaltyTx     LoyaltyTransaction[]
   npsResponses  NpsResponse[]
   fiadoTransactions FiadoTransaction[]
+  campaignMessages  CampaignMessage[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId, name])
@@ -395,6 +441,8 @@ model Coupon {
   validUntil        DateTime?
   active            Boolean    @default(true)
   orders            Order[]
+  campaigns         Campaign[]
+  campaignMessages  CampaignMessage[]
   createdAt         DateTime   @default(now())
 
   @@unique([restaurantId, code])
@@ -546,8 +594,9 @@ model Account {
   closedSessions   CashRegisterSession[] @relation("ClosedSessions")
   cashMovements    CashMovement[]
   fiadoTransactions FiadoTransaction[]
-  audiencesCreated Audience[]           @relation("AudienceCreator")
-  createdAt        DateTime     @default(now())
+  audiencesCreated  Audience[]  @relation("AudienceCreator")
+  campaignsCreated  Campaign[]  @relation("CampaignCreator")
+  createdAt         DateTime    @default(now())
   updatedAt        DateTime     @updatedAt
 }
 
@@ -674,6 +723,7 @@ model Restaurant {
   cashMovements           CashMovement[]
   fiadoTransactions       FiadoTransaction[]
   audiences               Audience[]
+  campaigns               Campaign[]
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -1028,6 +1078,119 @@ model Audience {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   createdBy  Account    @relation("AudienceCreator", fields: [createdByAccountId], references: [id], onDelete: Restrict)
 
+  campaigns Campaign[]
+
   @@index([restaurantId, deletedAt])
   @@index([createdByAccountId])
+}
+
+model Campaign {
+  id           Int             @id @default(autoincrement())
+  restaurantId Int
+  restaurant   Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  nome         String
+  descricao    String?
+  tipo         CampaignTipo
+  channel      CampaignChannel @default(WHATSAPP)
+  status       CampaignStatus  @default(DRAFT)
+
+  agendamentoTipo AgendamentoTipo @default(IMMEDIATE)
+  scheduledAt     DateTime?
+  recurringCron   String?    // cron expression
+  recurringEndsAt DateTime?  // data final da recorrência
+  // TODO: lastRunAt deriva de MAX(CampaignDispatch.completedAt) — sem coluna
+  //       dedicada. Implementar query helper em CampaignsService quando precisar.
+
+  // audienceId é nullable porque triggers automáticos (Fase F) criam Campaigns
+  // sem Audience persistida — recipient gerado dinamicamente.
+  audienceId Int?
+  audience   Audience? @relation(fields: [audienceId], references: [id], onDelete: Restrict)
+
+  couponId Int?
+  coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+
+  templateBody String
+
+  // Denormalização intencional: stats rápidos sem agregar dispatches
+  statsTotal     Int @default(0)
+  statsSent      Int @default(0)
+  statsFailed    Int @default(0)
+  statsDelivered Int @default(0)
+  statsRead      Int @default(0)
+  statsConverted Int @default(0)
+
+  createdByAccountId Int
+  createdBy          Account @relation("CampaignCreator", fields: [createdByAccountId], references: [id], onDelete: Restrict)
+
+  dispatches CampaignDispatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([restaurantId, status])
+  @@index([audienceId])
+  @@index([createdByAccountId])
+  @@index([couponId])
+}
+
+model CampaignDispatch {
+  id         Int      @id @default(autoincrement())
+  campaignId Int
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  status         DispatchStatus @default(SCHEDULED)
+  totalMessages  Int            @default(0)
+  sentCount      Int            @default(0)
+  failedCount    Int            @default(0)
+  deliveredCount Int            @default(0)
+
+  scheduledAt  DateTime
+  startedAt    DateTime?
+  completedAt  DateTime?
+  errorMessage String?
+
+  messages CampaignMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId, status])
+  @@index([scheduledAt])
+}
+
+model CampaignMessage {
+  id         Int              @id @default(autoincrement())
+  dispatchId Int
+  dispatch   CampaignDispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+
+  customerId Int
+  customer   Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  couponId Int?
+  coupon   Coupon?  @relation(fields: [couponId], references: [id], onDelete: SetNull)
+
+  orderId Int?
+  order   Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  status       MessageStatus @default(PENDING)
+  phone        String
+  renderedBody String
+
+  zapiMessageId String?
+
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  convertedAt  DateTime?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dispatchId, status])
+  @@index([customerId])
+  @@index([couponId])
+  @@index([zapiMessageId])
+  @@index([orderId])
 }
