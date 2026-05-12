@@ -11,9 +11,10 @@ import {
   OrderOrigin,
   OrderStatus,
   PaymentMethod,
-  PaymentStatus,
   Prisma,
   SubscriptionStatus,
+  TabPaymentMethod,
+  TabTipo,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CouponsService } from '../coupons/coupons.service';
@@ -24,6 +25,9 @@ import { CreateManualOrderDto } from './dto/create-manual-order.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { AuditService } from '../audit/audit.service';
+import { PromotionsService } from '../promotions/promotions.service';
+import { TabsService } from '../tabs/tabs.service';
+import { DeliveryCheckService } from '../delivery-zones/delivery-check.service';
 
 type AsaasOrderWebhookPayload = {
   event?: string;
@@ -55,7 +59,34 @@ function isPrismaUniqueError(error: unknown): error is { code: 'P2002' } {
   );
 }
 
-function getFinancialRange(period: 'TODAY' | 'WEEK' | 'MONTH', dateFrom?: string, dateTo?: string) {
+function toTabTipo(deliveryType: DeliveryType): TabTipo {
+  if (deliveryType === DeliveryType.DINE_IN) return TabTipo.SALAO;
+  if (deliveryType === DeliveryType.DELIVERY) return TabTipo.DELIVERY;
+  return TabTipo.RETIRADA;
+}
+
+function toTabPaymentMethod(pm: PaymentMethod): TabPaymentMethod {
+  switch (pm) {
+    case PaymentMethod.CASH:
+      return TabPaymentMethod.DINHEIRO;
+    case PaymentMethod.PIX:
+      return TabPaymentMethod.PIX;
+    case PaymentMethod.CREDIT_CARD:
+      return TabPaymentMethod.CARTAO_CREDITO;
+    case PaymentMethod.DEBIT_CARD:
+      return TabPaymentMethod.CARTAO_DEBITO;
+    default:
+      throw new Error(
+        `PaymentMethod '${pm}' não tem mapeamento para TabPaymentMethod`,
+      );
+  }
+}
+
+function getFinancialRange(
+  period: 'TODAY' | 'WEEK' | 'MONTH',
+  dateFrom?: string,
+  dateTo?: string,
+) {
   const now = new Date();
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
@@ -82,6 +113,9 @@ export class OrdersService {
     private asaasPayment: AsaasPaymentService,
     private loyalty: LoyaltyService,
     private audit: AuditService,
+    private promotions: PromotionsService,
+    private tabsService: TabsService,
+    private deliveryCheck: DeliveryCheckService,
   ) {}
 
   private normalizeHost(host?: string) {
@@ -94,12 +128,10 @@ export class OrdersService {
 
   async create(slug: string, dto: CreateOrderDto, host?: string) {
     const normalizedHost = this.normalizeHost(host);
-    const user = await this.prisma.user.findFirst({
+    const restaurant = await this.prisma.restaurant.findFirst({
       where:
         normalizedHost && slug === 'domain'
-          ? {
-              customDomain: normalizedHost,
-            }
+          ? { customDomain: normalizedHost }
           : { slug },
       select: {
         id: true,
@@ -109,17 +141,18 @@ export class OrdersService {
         trialEndsAt: true,
       },
     });
-    if (!user) throw new NotFoundException('Estabelecimento não encontrado.');
+    if (!restaurant)
+      throw new NotFoundException('Estabelecimento não encontrado.');
 
-    let subscriptionStatus = user.subscriptionStatus;
+    let subscriptionStatus = restaurant.subscriptionStatus;
     if (
       subscriptionStatus === SubscriptionStatus.TRIAL &&
-      user.trialEndsAt &&
-      user.trialEndsAt.getTime() < Date.now()
+      restaurant.trialEndsAt &&
+      restaurant.trialEndsAt.getTime() < Date.now()
     ) {
       subscriptionStatus = SubscriptionStatus.OVERDUE;
-      await this.prisma.user.update({
-        where: { id: user.id },
+      await this.prisma.restaurant.update({
+        where: { id: restaurant.id },
         data: { subscriptionStatus },
       });
     }
@@ -150,7 +183,11 @@ export class OrdersService {
 
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds }, userId: user.id, disponivel: true },
+      where: {
+        id: { in: productIds },
+        restaurantId: restaurant.id,
+        disponivel: true,
+      },
       include: {
         optionGroups: {
           include: {
@@ -168,10 +205,29 @@ export class OrdersService {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    let subtotal = 0;
-    const itemsData = dto.items.map((item) => {
+    // ── Phase 1: compute base prices (product.preco + option modifiers) ──────
+    let originalSubtotal = 0;
+    type ItemBase = {
+      productId: number;
+      productNameSnapshot: string;
+      productPriceSnapshot: number;
+      quantity: number;
+      baseUnitPrice: number;
+      categoryId: number | null;
+      selectedOptions:
+        | typeof Prisma.JsonNull
+        | Array<{
+            optionGroupId: number;
+            optionGroupName: string;
+            optionId: number;
+            nome: string;
+            priceModifier: number;
+          }>;
+      itemNotes?: string;
+    };
+    const itemsBase: ItemBase[] = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
-      let unitPrice = product.preco;
+      let baseUnitPrice = product.preco;
       const selectedOptionSnapshots: Array<{
         optionGroupId: number;
         optionGroupName: string;
@@ -210,16 +266,18 @@ export class OrdersService {
           });
 
           if (group.priceMode === OptionPriceMode.SUM) {
-            unitPrice += resolvedOptions.reduce(
+            baseUnitPrice += resolvedOptions.reduce(
               (sum, o) => sum + o.priceModifier,
               0,
             );
           } else if (group.priceMode === OptionPriceMode.HIGHEST) {
-            unitPrice += Math.max(
+            baseUnitPrice += Math.max(
               ...resolvedOptions.map((o) => o.priceModifier),
             );
           } else {
-            unitPrice = Math.max(...resolvedOptions.map((o) => o.priceModifier));
+            baseUnitPrice = Math.max(
+              ...resolvedOptions.map((o) => o.priceModifier),
+            );
           }
 
           for (const opt of resolvedOptions) {
@@ -235,81 +293,183 @@ export class OrdersService {
       }
 
       for (const group of productGroups) {
-        const selectedCount = selectedOptionSnapshots.filter((option) => option.optionGroupId === group.id).length;
-        if (group.required && selectedCount < Math.max(1, group.minSelections)) {
+        const selectedCount = selectedOptionSnapshots.filter(
+          (option) => option.optionGroupId === group.id,
+        ).length;
+        if (
+          group.required &&
+          selectedCount < Math.max(1, group.minSelections)
+        ) {
           throw new BadRequestException(`Selecione ${group.nome}.`);
         }
         if (selectedCount < group.minSelections) {
-          throw new BadRequestException(`Selecione pelo menos ${group.minSelections} opÃ§Ãµes em ${group.nome}.`);
+          throw new BadRequestException(
+            `Selecione pelo menos ${group.minSelections} opções em ${group.nome}.`,
+          );
         }
         if (selectedCount > group.maxSelections) {
-          throw new BadRequestException(`Selecione no mÃ¡ximo ${group.maxSelections} opÃ§Ãµes em ${group.nome}.`);
+          throw new BadRequestException(
+            `Selecione no máximo ${group.maxSelections} opções em ${group.nome}.`,
+          );
         }
       }
 
-      const itemTotal = unitPrice * item.quantity;
-      subtotal += itemTotal;
+      originalSubtotal += baseUnitPrice * item.quantity;
 
       return {
         productId: item.productId,
         productNameSnapshot: product.nome,
         productPriceSnapshot: product.preco,
         quantity: item.quantity,
-        unitPrice,
+        baseUnitPrice,
+        categoryId: product.categoryId,
         selectedOptions: selectedOptionSnapshots.length
           ? selectedOptionSnapshots
           : Prisma.JsonNull,
         itemNotes: item.itemNotes,
-        itemTotal,
       };
     });
 
-    const deliveryFee =
-      dto.deliveryType === DeliveryType.DELIVERY ? user.taxaEntrega : 0;
+    // ── Phase 2: apply best promotion per item ────────────────────────────────
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentTime = now.toTimeString().slice(0, 5);
+    const activePromos = await this.promotions.findActive(restaurant.id);
+
+    let promoSubtotal = 0;
+    const itemsData = itemsBase.map((item) => {
+      const matchingPromos = activePromos.filter((p) => {
+        if (p.diasSemana.length > 0 && !p.diasSemana.includes(currentDay))
+          return false;
+        if (p.horaInicio && currentTime < p.horaInicio) return false;
+        if (p.horaFim && currentTime > p.horaFim) return false;
+        const matchesProduct = p.productIds.includes(item.productId);
+        const matchesCategory =
+          item.categoryId != null && p.categoryIds.includes(item.categoryId);
+        const noTarget =
+          p.productIds.length === 0 && p.categoryIds.length === 0;
+        return matchesProduct || matchesCategory || noTarget;
+      });
+
+      let bestPrice = item.baseUnitPrice;
+      let bestPromoId: number | null = null;
+
+      for (const promo of matchingPromos) {
+        let candidate: number;
+        if (promo.tipoDesconto === 'PERCENTUAL')
+          candidate = item.baseUnitPrice * (1 - promo.valorDesconto / 100);
+        else if (promo.tipoDesconto === 'VALOR_FIXO')
+          candidate = Math.max(0, item.baseUnitPrice - promo.valorDesconto);
+        else candidate = promo.valorDesconto; // PRECO_FIXO
+        if (candidate < bestPrice) {
+          bestPrice = candidate;
+          bestPromoId = promo.id;
+        }
+      }
+
+      promoSubtotal += bestPrice * item.quantity;
+
+      const { baseUnitPrice, categoryId, ...itemRest } = item;
+      return {
+        ...itemRest,
+        unitPrice: bestPrice,
+        itemTotal: bestPrice * item.quantity,
+        precoOriginal: bestPromoId != null ? baseUnitPrice : null,
+        appliedPromotionId: bestPromoId,
+      };
+    });
+
+    // E.1 — DeliveryZone check: validate CEP and override fee when provided
+    let deliveryFee =
+      dto.deliveryType === DeliveryType.DELIVERY ? restaurant.taxaEntrega : 0;
+    let zoneMetadata: { zoneName: string; tempoEstimadoMin: number } | null =
+      null;
+
+    const isOwnSource = !dto.source || dto.source === 'OWN';
+    if (
+      dto.deliveryType === DeliveryType.DELIVERY &&
+      dto.deliveryCep &&
+      isOwnSource
+    ) {
+      const zoneResult = await this.deliveryCheck.check(slug, dto.deliveryCep);
+      if (!zoneResult.canDeliver) {
+        throw new BadRequestException(zoneResult.reason);
+      }
+      deliveryFee = zoneResult.fretefixo;
+      zoneMetadata = {
+        zoneName: zoneResult.zoneName,
+        tempoEstimadoMin: zoneResult.tempoEstimadoMin,
+      };
+    }
+
     const customerPhone = dto.customerPhone.replace(/[^\d+]/g, '');
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const order = await this.prisma.$transaction(async (tx) => {
+        const { order, tabId } = await this.prisma.$transaction(async (tx) => {
+          // ── Promo vs Coupon: choose greater discount ────────────────────────
+          const promoSaving = originalSubtotal - promoSubtotal;
+          let finalItemsData = itemsData;
+          let finalSubtotal = promoSubtotal;
           let discountAmount = 0;
           let couponId: number | undefined;
 
           if (dto.couponCode) {
             const coupon = await this.coupons.validate(
-              user.id,
+              restaurant.id,
               dto.couponCode,
-              subtotal,
+              originalSubtotal,
               tx,
             );
-            discountAmount = this.coupons.calcDiscount(
+            const couponDiscount = this.coupons.calcDiscount(
               coupon,
-              subtotal,
+              originalSubtotal,
               deliveryFee,
             );
-            couponId = coupon.id;
-            await tx.coupon.update({
-              where: { id: coupon.id },
-              data: { usedCount: { increment: 1 } },
-            });
+
+            if (couponDiscount > promoSaving) {
+              // coupon wins: strip promo from items, use original prices
+              finalItemsData = itemsBase.map((item) => {
+                const { baseUnitPrice, categoryId, ...rest } = item;
+                return {
+                  ...rest,
+                  unitPrice: baseUnitPrice,
+                  itemTotal: baseUnitPrice * item.quantity,
+                  precoOriginal: null,
+                  appliedPromotionId: null,
+                };
+              });
+              finalSubtotal = originalSubtotal;
+              discountAmount = couponDiscount;
+              couponId = coupon.id;
+              await tx.coupon.update({
+                where: { id: coupon.id },
+                data: { usedCount: { increment: 1 } },
+              });
+            }
+            // else: promo wins — coupon not applied, usedCount unchanged
           }
 
-          const total = Math.max(0, subtotal + deliveryFee - discountAmount);
+          const total = Math.max(
+            0,
+            finalSubtotal + deliveryFee - discountAmount,
+          );
 
           const last = await tx.order.findFirst({
-            where: { userId: user.id },
+            where: { restaurantId: restaurant.id },
             orderBy: { orderNumber: 'desc' },
             select: { orderNumber: true },
           });
           const orderNumber = (last?.orderNumber ?? 0) + 1;
           const customer = await tx.customer.upsert({
             where: {
-              userId_phone: {
-                userId: user.id,
+              restaurantId_phone: {
+                restaurantId: restaurant.id,
                 phone: customerPhone,
               },
             },
             create: {
-              userId: user.id,
+              restaurantId: restaurant.id,
               name: dto.customerName,
               phone: customerPhone,
               document: customerDocument,
@@ -323,32 +483,89 @@ export class OrdersService {
             select: { id: true },
           });
 
+          const tipo = toTabTipo(dto.deliveryType);
+          let tab!: { id: number };
+          if (dto.deliveryType === DeliveryType.DINE_IN && dto.tableId) {
+            const existing = await tx.tab.findFirst({
+              where: {
+                restaurantId: restaurant.id,
+                tableId: dto.tableId,
+                status: 'OPEN',
+              },
+              select: { id: true },
+            });
+            if (existing) {
+              tab = existing;
+            } else {
+              tab = await tx.tab.create({
+                data: {
+                  restaurantId: restaurant.id,
+                  tipo,
+                  tableId: dto.tableId,
+                  customerNome: dto.customerName,
+                  customerId: customer.id,
+                },
+                select: { id: true },
+              });
+            }
+          } else {
+            tab = await tx.tab.create({
+              data: {
+                restaurantId: restaurant.id,
+                tipo,
+                tableId: dto.tableId,
+                customerNome: dto.customerName,
+                customerId: customer.id,
+              },
+              select: { id: true },
+            });
+          }
+
           const order = await tx.order.create({
             data: {
-              userId: user.id,
+              restaurantId: restaurant.id,
               customerId: customer.id,
               orderNumber,
               customerName: dto.customerName,
               customerPhone,
-              customerAddress:
-                (dto.customerAddress as unknown as Prisma.InputJsonObject) ??
-                Prisma.DbNull,
+              customerAddress: zoneMetadata
+                ? {
+                    ...(dto.customerAddress ?? {}),
+                    deliveryZone: zoneMetadata.zoneName,
+                    deliveryZoneEta: zoneMetadata.tempoEstimadoMin,
+                  }
+                : ((dto.customerAddress as unknown as Prisma.InputJsonObject) ??
+                  Prisma.DbNull),
               deliveryType: dto.deliveryType,
               deliveryFee,
-              subtotal,
+              subtotal: finalSubtotal,
               discountAmount,
               total,
-              paymentMethod: dto.paymentMethod,
+              tabId: tab.id,
               couponId,
               couponCode: dto.couponCode?.toUpperCase(),
               notes: dto.notes,
-              items: { create: itemsData },
+              items: { create: finalItemsData },
               history: { create: { toStatus: OrderStatus.PENDING } },
             },
             include: { items: true },
           });
 
-          return order;
+          if (dto.paymentMethod !== PaymentMethod.ONLINE_PIX) {
+            await tx.payment.create({
+              data: {
+                restaurantId: restaurant.id,
+                tabId: tab.id,
+                metodo: toTabPaymentMethod(dto.paymentMethod),
+                valor: new Prisma.Decimal(total),
+                status: 'PENDING',
+              },
+            });
+          }
+
+          await this.tabsService.recalculateTotals(tab.id, tx);
+
+          return { order, tabId: tab.id };
         });
 
         // ONLINE_PIX: create Asaas charge and attach Pix data to the order
@@ -366,28 +583,34 @@ export class OrdersService {
               customerPhone: dto.customerPhone,
               orderId: order.id,
               orderNumber: order.orderNumber,
-              restaurantName: user.nome,
+              restaurantName: restaurant.nome,
               value: order.total,
             });
 
-            const orderWithPix = await this.prisma.order.update({
-              where: { id: order.id },
+            const tabPayment = await this.prisma.payment.create({
               data: {
-                externalPaymentId: pix.paymentId,
+                restaurantId: restaurant.id,
+                tabId,
+                metodo: TabPaymentMethod.PIX,
+                valor: order.total,
+                status: 'PENDING',
+                pixTransactionId: pix.paymentId,
+              },
+            });
+
+            this.gateway.emitNewOrder(restaurant.id, order);
+            // TODO: persist pixQrCode/pixCopyPaste in Payment via additive migration if re-display is needed
+            return {
+              order,
+              payment: {
+                id: tabPayment.id,
+                pixTransactionId: pix.paymentId,
                 pixQrCode: pix.pixQrCode,
                 pixCopyPaste: pix.pixCopyPaste,
               },
-              include: { items: true },
-            });
-
-            this.gateway.emitNewOrder(user.id, orderWithPix);
-            return orderWithPix;
+            };
           } catch (pixError) {
             this.logger.error('Asaas Pix charge failed', pixError);
-            await this.prisma.order.update({
-              where: { id: order.id },
-              data: { paymentStatus: PaymentStatus.FAILED },
-            });
             throw new BadRequestException(
               'Pagamento Pix indisponível. Escolha outro método de pagamento.',
             );
@@ -395,13 +618,15 @@ export class OrdersService {
         }
 
         if (order.couponId) {
-          this.prisma.campaign.updateMany({
-            where: { couponId: order.couponId, userId: user.id },
-            data: { metaConversoes: { increment: 1 } },
-          }).catch(() => undefined);
+          this.prisma.campaign
+            .updateMany({
+              where: { couponId: order.couponId, restaurantId: restaurant.id },
+              data: { metaConversoes: { increment: 1 } },
+            })
+            .catch(() => undefined);
         }
 
-        this.gateway.emitNewOrder(user.id, order);
+        this.gateway.emitNewOrder(restaurant.id, order);
         return order;
       } catch (error: unknown) {
         if (isPrismaUniqueError(error) && attempt < 2) continue;
@@ -436,27 +661,67 @@ export class OrdersService {
       return { received: true, ignored: true };
     }
 
+    const asaasPaymentId = payload.payment?.id;
+
     const order = await this.prisma.order.findFirst({
       where: { id: orderId },
-      select: { id: true, userId: true, paymentStatus: true },
+      select: { id: true, restaurantId: true, tabId: true },
     });
 
-    if (!order || order.paymentStatus === PaymentStatus.PAID) {
-      return { received: true, ignored: true };
+    if (!order) return { received: true, ignored: true };
+
+    if (asaasPaymentId) {
+      const confirmedPayment = await this.prisma.payment.findFirst({
+        where: { pixTransactionId: asaasPaymentId, status: 'CONFIRMED' },
+      });
+      if (confirmedPayment) return { received: true, ignored: true };
     }
 
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { paymentStatus: PaymentStatus.PAID, paidAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      if (order.tabId && asaasPaymentId) {
+        const payment = await tx.payment.findFirst({
+          where: {
+            tabId: order.tabId,
+            pixTransactionId: asaasPaymentId,
+            status: 'PENDING',
+          },
+        });
+        if (payment) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'CONFIRMED', recebidoEm: new Date() },
+          });
+
+          const totals = await this.tabsService.recalculateTotals(
+            order.tabId,
+            tx,
+          );
+
+          const tab = await tx.tab.findUnique({
+            where: { id: order.tabId },
+            select: { tipo: true },
+          });
+          if (
+            tab?.tipo === TabTipo.DELIVERY &&
+            totals.totalPago >= totals.total &&
+            totals.total > 0
+          ) {
+            await tx.tab.update({
+              where: { id: order.tabId },
+              data: { status: 'CLOSED', closedAt: new Date() },
+            });
+          }
+        }
+      }
     });
 
-    this.gateway.emitPaymentConfirmed(order.userId, orderId);
+    this.gateway.emitPaymentConfirmed(order.restaurantId, orderId);
 
     return { received: true };
   }
 
-  findAll(userId: number, query: ListOrdersQueryDto) {
-    const where: Prisma.OrderWhereInput = { userId };
+  findAll(restaurantId: number, query: ListOrdersQueryDto) {
+    const where: Prisma.OrderWhereInput = { restaurantId };
     if (query.status) where.orderStatus = query.status;
     const origins = query.origin?.length ? query.origin : query.origins;
     if (origins?.length) where.origin = { in: origins };
@@ -485,12 +750,12 @@ export class OrdersService {
     });
   }
 
-  async createManualOrder(userId: number, dto: CreateManualOrderDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId },
+  async createManualOrder(restaurantId: number, dto: CreateManualOrderDto) {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      where: { id: restaurantId },
       select: { id: true, taxaEntrega: true },
     });
-    if (!user) throw new NotFoundException('Restaurante não encontrado.');
+    if (!restaurant) throw new NotFoundException('Restaurante não encontrado.');
 
     if (dto.deliveryType === DeliveryType.DELIVERY && !dto.customerAddress) {
       throw new BadRequestException('Endereço é obrigatório para entrega.');
@@ -498,7 +763,7 @@ export class OrdersService {
 
     const productIds = [...new Set(dto.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds }, userId, disponivel: true },
+      where: { id: { in: productIds }, restaurantId, disponivel: true },
     });
     if (products.length !== productIds.length) {
       throw new BadRequestException(
@@ -526,7 +791,7 @@ export class OrdersService {
     });
 
     const deliveryFee =
-      dto.deliveryType === DeliveryType.DELIVERY ? user.taxaEntrega : 0;
+      dto.deliveryType === DeliveryType.DELIVERY ? restaurant.taxaEntrega : 0;
     const total = subtotal + deliveryFee;
     const customerPhone = dto.customerPhone.replace(/[^\d+]/g, '');
 
@@ -534,16 +799,18 @@ export class OrdersService {
       try {
         const order = await this.prisma.$transaction(async (tx) => {
           const last = await tx.order.findFirst({
-            where: { userId },
+            where: { restaurantId },
             orderBy: { orderNumber: 'desc' },
             select: { orderNumber: true },
           });
           const orderNumber = (last?.orderNumber ?? 0) + 1;
 
           const customer = await tx.customer.upsert({
-            where: { userId_phone: { userId, phone: customerPhone } },
+            where: {
+              restaurantId_phone: { restaurantId, phone: customerPhone },
+            },
             create: {
-              userId,
+              restaurantId,
               name: dto.customerName,
               phone: customerPhone,
               lastOrderAt: new Date(),
@@ -552,9 +819,43 @@ export class OrdersService {
             select: { id: true },
           });
 
-          return tx.order.create({
+          const tipo = toTabTipo(dto.deliveryType);
+          let tab!: { id: number };
+          if (dto.deliveryType === DeliveryType.DINE_IN && dto.tableId) {
+            const existing = await tx.tab.findFirst({
+              where: { restaurantId, tableId: dto.tableId, status: 'OPEN' },
+              select: { id: true },
+            });
+            if (existing) {
+              tab = existing;
+            } else {
+              tab = await tx.tab.create({
+                data: {
+                  restaurantId,
+                  tipo,
+                  tableId: dto.tableId,
+                  customerNome: dto.customerName,
+                  customerId: customer.id,
+                },
+                select: { id: true },
+              });
+            }
+          } else {
+            tab = await tx.tab.create({
+              data: {
+                restaurantId,
+                tipo,
+                tableId: dto.tableId,
+                customerNome: dto.customerName,
+                customerId: customer.id,
+              },
+              select: { id: true },
+            });
+          }
+
+          const order = await tx.order.create({
             data: {
-              userId,
+              restaurantId,
               customerId: customer.id,
               orderNumber,
               customerName: dto.customerName,
@@ -567,7 +868,7 @@ export class OrdersService {
               subtotal,
               discountAmount: 0,
               total,
-              paymentMethod: dto.paymentMethod,
+              tabId: tab.id,
               origin: OrderOrigin.MANUAL,
               notes: dto.notes,
               orderStatus: OrderStatus.CONFIRMED,
@@ -576,9 +877,23 @@ export class OrdersService {
             },
             include: { items: true },
           });
+
+          await tx.payment.create({
+            data: {
+              restaurantId,
+              tabId: tab.id,
+              metodo: toTabPaymentMethod(dto.paymentMethod),
+              valor: new Prisma.Decimal(total),
+              status: 'PENDING',
+            },
+          });
+
+          await this.tabsService.recalculateTotals(tab.id, tx);
+
+          return order;
         });
 
-        this.gateway.emitNewOrder(userId, order);
+        this.gateway.emitNewOrder(restaurantId, order);
         return order;
       } catch (error: unknown) {
         if (isPrismaUniqueError(error) && attempt < 2) continue;
@@ -592,19 +907,20 @@ export class OrdersService {
   }
 
   async createFromBot(
-    userId: number,
+    restaurantId: number,
     dto: CreateOrderDto,
     externalOrderId: string,
     externalChannel?: string,
   ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
       select: { slug: true },
     });
-    if (!user?.slug)
-      throw new NotFoundException('Restaurante nÃ£o encontrado.');
+    if (!restaurant?.slug)
+      throw new NotFoundException('Restaurante não encontrado.');
 
-    const order = await this.create(user.slug, dto);
+    const result = await this.create(restaurant.slug, dto);
+    const order = 'order' in result ? result.order : result;
     return this.prisma.order.update({
       where: { id: order.id },
       data: {
@@ -619,9 +935,9 @@ export class OrdersService {
     });
   }
 
-  async findOne(id: number, userId: number) {
+  async findOne(id: number, restaurantId: number) {
     const order = await this.prisma.order.findFirst({
-      where: { id, userId },
+      where: { id, restaurantId },
       include: {
         items: true,
         history: { orderBy: { createdAt: 'asc' } },
@@ -631,8 +947,15 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(id: number, userId: number, newStatus: OrderStatus) {
-    const order = await this.prisma.order.findFirst({ where: { id, userId } });
+  async updateStatus(
+    id: number,
+    restaurantId: number,
+    newStatus: OrderStatus,
+    accountId?: number,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, restaurantId },
+    });
     if (!order) throw new NotFoundException('Pedido não encontrado.');
 
     const allowed = STATUS_TRANSITIONS[order.orderStatus] ?? [];
@@ -672,11 +995,18 @@ export class OrdersService {
       }),
     ]);
 
-    this.gateway.emitStatusChanged(userId, id, newStatus);
-    void this.audit.log(userId, `ORDER_STATUS_CHANGE`, 'Order', id, { from: order.orderStatus, to: newStatus });
+    this.gateway.emitStatusChanged(restaurantId, id, newStatus);
+    void this.audit.log(
+      restaurantId,
+      `ORDER_STATUS_CHANGE`,
+      'Order',
+      id,
+      { from: order.orderStatus, to: newStatus },
+      accountId,
+    );
 
     if (newStatus === OrderStatus.DELIVERED) {
-      this.gateway.emitWhatsappPrompt(userId, {
+      this.gateway.emitWhatsappPrompt(restaurantId, {
         orderId: id,
         customerPhone: updated.customerPhone,
         customerName: updated.customerName,
@@ -685,7 +1015,7 @@ export class OrdersService {
 
     if (newStatus === OrderStatus.DELIVERED && updated.customerId) {
       void this.loyalty
-        .awardPoints(userId, updated.customerId, id, updated.total)
+        .awardPoints(restaurantId, updated.customerId, id, updated.total)
         .catch(() => undefined);
     }
 
@@ -693,28 +1023,51 @@ export class OrdersService {
   }
 
   async financialSummary(
-    userId: number,
-    params: { period: 'TODAY' | 'WEEK' | 'MONTH'; dateFrom?: string; dateTo?: string },
+    restaurantId: number,
+    params: {
+      period: 'TODAY' | 'WEEK' | 'MONTH';
+      dateFrom?: string;
+      dateTo?: string;
+    },
   ) {
-    const createdAt = getFinancialRange(params.period, params.dateFrom, params.dateTo);
-    const payments = await this.prisma.order.findMany({
-      where: { userId, createdAt },
+    const createdAt = getFinancialRange(
+      params.period,
+      params.dateFrom,
+      params.dateTo,
+    );
+
+    const payments = await this.prisma.payment.findMany({
+      where: { restaurantId, createdAt },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
-        orderNumber: true,
-        customerName: true,
-        paymentMethod: true,
-        paymentStatus: true,
-        total: true,
+        metodo: true,
+        status: true,
+        valor: true,
         createdAt: true,
+        tab: {
+          select: {
+            orders: {
+              select: {
+                id: true,
+                orderNumber: true,
+                customerName: true,
+                total: true,
+              },
+              orderBy: { createdAt: 'asc' },
+              take: 1,
+            },
+          },
+        },
       },
     });
 
-    const totalBruto = payments.reduce((sum, payment) => sum + payment.total, 0);
+    const totalBruto = payments
+      .filter((p) => p.status === 'CONFIRMED')
+      .reduce((sum, p) => sum + Number(p.valor), 0);
     const totalPendente = payments
-      .filter((payment) => payment.paymentStatus === PaymentStatus.PENDING)
-      .reduce((sum, payment) => sum + payment.total, 0);
+      .filter((p) => p.status === 'PENDING')
+      .reduce((sum, p) => sum + Number(p.valor), 0);
     const totalTaxas = totalBruto * 0.0299;
 
     return {
@@ -722,15 +1075,19 @@ export class OrdersService {
       totalTaxas,
       totalLiquido: Math.max(0, totalBruto - totalTaxas),
       totalPendente,
-      payments: payments.map((payment) => ({
-        orderId: payment.id,
-        orderNumber: payment.orderNumber,
-        customerName: payment.customerName,
-        paymentMethod: payment.paymentMethod,
-        paymentStatus: payment.paymentStatus,
-        total: payment.total,
-        createdAt: payment.createdAt,
-      })),
+      payments: payments.map((p) => {
+        const firstOrder = p.tab?.orders[0];
+        return {
+          paymentId: p.id,
+          orderId: firstOrder?.id ?? null,
+          orderNumber: firstOrder?.orderNumber ?? null,
+          customerName: firstOrder?.customerName ?? null,
+          paymentMethod: p.metodo,
+          paymentStatus: p.status,
+          total: Number(p.valor),
+          createdAt: p.createdAt,
+        };
+      }),
     };
   }
 }
