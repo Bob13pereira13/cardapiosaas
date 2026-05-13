@@ -86,7 +86,10 @@ enum OrderOrigin {
   WEBSITE
   MANUAL
   WHATSAPP_BOT
+  MESA
   IFOOD
+  NINETYNINEFOOD
+  KEETA
   OTHER
 }
 
