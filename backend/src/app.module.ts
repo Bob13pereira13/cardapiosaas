@@ -28,7 +28,7 @@ import { TablesModule } from './tables/tables.module';
 import { CombosModule } from './combos/combos.module';
 import { AuditModule } from './audit/audit.module';
 import { TeamModule } from './team/team.module';
-import { ComplementosModule } from './complementos/complementos.module';
+import { ComplementsModule } from './complements/complements.module';
 import { RestaurantsModule } from './restaurants/restaurants.module';
 import { ProductionSectorsModule } from './production-sectors/production-sectors.module';
 import { PromotionsModule } from './promotions/promotions.module';
@@ -71,7 +71,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     CombosModule,
     AuditModule,
     TeamModule,
-    ComplementosModule,
+    ComplementsModule,
     RestaurantsModule,
     ProductionSectorsModule,
     PromotionsModule,
