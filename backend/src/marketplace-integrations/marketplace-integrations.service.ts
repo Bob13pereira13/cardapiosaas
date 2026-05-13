@@ -110,6 +110,20 @@ export class MarketplaceIntegrationsService {
     return connector.testConnection(authData, config);
   }
 
+  async listActive(restaurantId: number) {
+    const integrations = await this.prisma.marketplaceIntegration.findMany({
+      where: { restaurantId, isActive: true },
+      select: {
+        marketplace: true,
+        isActive: true,
+        lastSyncAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return { active: integrations };
+  }
+
   private mask<T extends { authData: string | null }>(
     row: T,
   ): Omit<T, 'authData'> & { authData: string | null } {

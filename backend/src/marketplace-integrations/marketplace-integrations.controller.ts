@@ -54,6 +54,11 @@ export class MarketplaceIntegrationsController {
     return this.service.findAll(req.user.activeRestaurantId);
   }
 
+  @Get('active')
+  listActive(@Request() req: AuthenticatedRequest) {
+    return this.service.listActive(req.user.activeRestaurantId);
+  }
+
   @Get(':id')
   findOne(
     @Param('id', ParseIntPipe) id: number,
