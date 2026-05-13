@@ -9,11 +9,13 @@ import { SummaryCards } from './components/SummaryCards'
 import { RevenueChart } from './components/RevenueChart'
 import { TopProductsList } from './components/TopProductsList'
 import { OriginChart } from './components/OriginChart'
+import { HeatmapChart } from './components/HeatmapChart'
 import {
   useTrendsSummary,
   useTrendsRevenue,
   useTrendsTopProducts,
   useTrendsOrigin,
+  useTrendsHeatmap,
   type Granularity,
   type TrendPeriod,
 } from './hooks/useTrendsApi'
@@ -21,24 +23,30 @@ import {
 export default function RelatoriosPage() {
   const router = useRouter()
 
-  // Global period controls summary cards
+  // Global period — controls summary cards
   const [period, setPeriod] = useState<TrendPeriod>('current_month')
 
-  // Revenue chart has its own granularity + period
+  // Revenue chart
   const [revenueGranularity, setRevenueGranularity] = useState<Granularity>('day')
   const [revenuePeriod, setRevenuePeriod] = useState<TrendPeriod>('last_30d')
 
-  // Top products has its own period + orderBy
+  // Top products
   const [topPeriod, setTopPeriod] = useState<TrendPeriod>('last_30d')
   const [topOrderBy, setTopOrderBy] = useState<'revenue' | 'quantity'>('revenue')
 
-  // Origin chart has its own period
+  // Origin chart
   const [originPeriod, setOriginPeriod] = useState<TrendPeriod>('last_30d')
+
+  // Heatmap
+  const [heatmapPeriod, setHeatmapPeriod] = useState<
+    'last_7d' | 'last_30d' | 'last_90d'
+  >('last_30d')
 
   const summary = useTrendsSummary(period)
   const revenue = useTrendsRevenue(revenueGranularity, revenuePeriod)
   const topProducts = useTrendsTopProducts(topPeriod, 8, topOrderBy)
   const origin = useTrendsOrigin(originPeriod)
+  const heatmap = useTrendsHeatmap(heatmapPeriod)
 
   return (
     <div className="space-y-6">
@@ -98,6 +106,14 @@ export default function RelatoriosPage() {
           onPeriodChange={setOriginPeriod}
         />
       </div>
+
+      <HeatmapChart
+        data={heatmap.data}
+        loading={heatmap.loading}
+        error={heatmap.error}
+        period={heatmapPeriod}
+        onPeriodChange={setHeatmapPeriod}
+      />
     </div>
   )
 }
