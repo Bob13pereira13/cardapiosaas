@@ -452,6 +452,70 @@ export class DispatchService {
     };
   }
 
+  async dispatchToCustomers(
+    campaignId: number,
+    customerIds: number[],
+  ): Promise<{ dispatchId: number; sentCount: number; failedCount: number }> {
+    if (customerIds.length === 0) {
+      return { dispatchId: 0, sentCount: 0, failedCount: 0 };
+    }
+
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id: campaignId },
+      include: {
+        coupon: { select: { id: true, code: true } },
+        restaurant: { select: { nome: true, slug: true } },
+      },
+    });
+    if (!campaign) throw new NotFoundException('Campanha não encontrada.');
+
+    const customers = (await this.prisma.customer.findMany({
+      where: { id: { in: customerIds } },
+      select: { id: true, name: true, phone: true },
+    })) as CustomerRow[];
+
+    const dispatch = await this.prisma.campaignDispatch.create({
+      data: {
+        campaignId,
+        status: DispatchStatus.RUNNING,
+        scheduledAt: new Date(),
+        startedAt: new Date(),
+        totalMessages: customers.length,
+      },
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < customers.length; i += 50) {
+      const batch = customers.slice(i, i + 50);
+      for (const customer of batch) {
+        const result = await this.processOne(
+          customer,
+          campaign,
+          dispatch.id,
+          campaign.restaurantId,
+        );
+        if (result.success) sentCount++;
+        else failedCount++;
+      }
+    }
+
+    const finalStatus =
+      customers.length > 0 && failedCount === customers.length
+        ? DispatchStatus.FAILED
+        : DispatchStatus.COMPLETED;
+
+    await this.prisma.campaignDispatch.update({
+      where: { id: dispatch.id },
+      data: { status: finalStatus, completedAt: new Date() },
+    });
+
+    // TRIGGER campaigns stay DRAFT/SCHEDULED for future runs — do NOT transition to COMPLETED
+
+    return { dispatchId: dispatch.id, sentCount, failedCount };
+  }
+
   async getMessages(
     campaignId: number,
     restaurantId: number,
