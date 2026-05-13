@@ -95,6 +95,7 @@ export default function PedidosPage() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterValue>('today')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [tooMany, setTooMany] = useState(false)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [highlightedIds, setHighlightedIds] = useState<Set<number>>(new Set())
@@ -172,7 +173,14 @@ export default function PedidosPage() {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (handleUnauthorized(response)) return
+    if (!response.ok) {
+      const err = await response.json().catch(() => null) as { message?: string } | null
+      throw new Error(`Erro ao carregar pedidos: ${response.status} ${err?.message ?? ''}`)
+    }
     const data = (await response.json()) as Order[]
+    if (!Array.isArray(data)) {
+      throw new Error('Resposta inesperada do servidor ao carregar pedidos.')
+    }
 
     if (data.length >= TOO_MANY_THRESHOLD) {
       setTooMany(true)
@@ -200,8 +208,14 @@ export default function PedidosPage() {
   useEffect(() => {
     async function init() {
       setLoading(true)
-      await Promise.all([loadOrders(), loadProducts()])
-      setLoading(false)
+      setLoadError(null)
+      try {
+        await Promise.all([loadOrders(), loadProducts()])
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Erro ao carregar pedidos.')
+      } finally {
+        setLoading(false)
+      }
     }
     void init()
   }, [loadOrders, loadProducts])
@@ -378,6 +392,12 @@ export default function PedidosPage() {
             </>
           }
         />
+
+        {loadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {loadError}
+          </div>
+        )}
 
         {tooMany && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
