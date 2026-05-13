@@ -1,17 +1,52 @@
-import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common';
+import { CacheInterceptor } from '@nestjs/cache-manager';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  Request,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { ReportsService } from './reports.service';
+import type { Granularity, TrendPeriod } from './trends/dto/trend-query.dto';
+import { TrendsService } from './trends/trends.service';
 
 type AuthenticatedRequest = {
   user: { id: number; activeRestaurantId: number };
 };
 type Period = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM';
 
+const SUMMARY_PERIODS = [
+  'current_month',
+  'current_week',
+  'current_year',
+] as const;
+type SummaryPeriod = (typeof SUMMARY_PERIODS)[number];
+
+const VALID_GRANULARITIES: Granularity[] = ['day', 'month'];
+const ALL_TREND_PERIODS: TrendPeriod[] = [
+  'current_month',
+  'current_week',
+  'current_year',
+  'last_7d',
+  'last_30d',
+  'last_90d',
+  'last_12m',
+  'last_24m',
+];
+
 @Controller('reports')
 @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly trends: TrendsService,
+  ) {}
+
+  // ─── Legacy snapshot endpoints ───
 
   @Get('summary')
   summary(
@@ -63,5 +98,44 @@ export class ReportsController {
   @Get('churn-signals')
   churnSignals(@Request() req: AuthenticatedRequest) {
     return this.reports.getChurnSignals(req.user.activeRestaurantId);
+  }
+
+  // ─── Trends endpoints (Etapa 11) ───
+
+  @Get('trends/summary')
+  @UseInterceptors(CacheInterceptor)
+  trendsSummary(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period?: string,
+  ) {
+    const p = (period ?? 'current_month') as SummaryPeriod;
+    if (!SUMMARY_PERIODS.includes(p)) {
+      throw new BadRequestException(
+        `period inválido. Use: ${SUMMARY_PERIODS.join(', ')}`,
+      );
+    }
+    return this.trends.summary(req.user.activeRestaurantId, p);
+  }
+
+  @Get('trends/revenue')
+  @UseInterceptors(CacheInterceptor)
+  trendsRevenue(
+    @Request() req: AuthenticatedRequest,
+    @Query('granularity') granularity?: string,
+    @Query('period') period?: string,
+  ) {
+    const g = (granularity ?? 'day') as Granularity;
+    const p = (period ?? 'last_30d') as TrendPeriod;
+
+    if (!VALID_GRANULARITIES.includes(g)) {
+      throw new BadRequestException(`granularity inválido. Use: day, month`);
+    }
+    if (!ALL_TREND_PERIODS.includes(p)) {
+      throw new BadRequestException(
+        `period inválido. Use: ${ALL_TREND_PERIODS.join(', ')}`,
+      );
+    }
+
+    return this.trends.revenue(req.user.activeRestaurantId, g, p);
   }
 }
