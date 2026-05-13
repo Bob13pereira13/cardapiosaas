@@ -25,14 +25,35 @@ export class PublicService {
       preco: true,
       imagem: true,
       categoryId: true,
-      optionGroups: {
-        orderBy: { ordem: 'asc' as const },
+      productComplements: {
+        where: { complement: { isActive: true, deletedAt: null } },
+        orderBy: { sortOrder: 'asc' as const },
         include: {
-          optionGroup: {
-            include: {
-              options: {
-                where: { available: true },
-                orderBy: { displayOrder: 'asc' as const },
+          complement: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              selectionRule: true,
+              priceMode: true,
+              minSelections: true,
+              maxSelections: true,
+              visibility: true,
+              complementOptions: {
+                where: { isVisible: true },
+                orderBy: { sortOrder: 'asc' as const },
+                include: {
+                  option: {
+                    select: {
+                      id: true,
+                      name: true,
+                      description: true,
+                      imageUrl: true,
+                      stockStatus: true,
+                      isActive: true,
+                    },
+                  },
+                },
               },
             },
           },
@@ -118,12 +139,18 @@ export class PublicService {
           ]
         : restaurant.categories;
 
-    const normalizeProduct = (product: any) => ({
-      ...product,
-      optionGroups: (product.optionGroups ?? [])
-        .map((link: any) => link.optionGroup)
-        .filter((group: any) => group?.ativo !== false),
-    });
+    const normalizeProduct = (product: any) => {
+      const { productComplements, ...rest } = product;
+      return {
+        ...rest,
+        complements: (productComplements ?? [])
+          .map((link: any) => ({
+            ...link.complement,
+            sortOrder: link.sortOrder,
+          }))
+          .filter((c: any) => c.isActive !== false),
+      };
+    };
 
     const categoriesFiltered = allCategories.map((cat) => ({
       ...cat,
@@ -207,7 +234,21 @@ export class PublicService {
             unitPrice: true,
             itemTotal: true,
             itemNotes: true,
-            selectedOptions: true,
+            selectedComplements: {
+              select: {
+                id: true,
+                complementNameSnapshot: true,
+                selectionRuleSnapshot: true,
+                selectedOptions: {
+                  select: {
+                    id: true,
+                    optionNameSnapshot: true,
+                    optionPriceSnapshot: true,
+                    quantity: true,
+                  },
+                },
+              },
+            },
           },
         },
       },

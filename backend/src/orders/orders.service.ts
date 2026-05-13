@@ -6,9 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ComplementPriceMode,
+  ComplementSelectionRule,
   DeliveryType,
   MessageStatus,
-  OptionPriceMode,
+  OptionStockStatus,
   OrderOrigin,
   OrderStatus,
   PaymentMethod,
@@ -80,6 +82,29 @@ function toTabPaymentMethod(pm: PaymentMethod): TabPaymentMethod {
       throw new Error(
         `PaymentMethod '${pm}' não tem mapeamento para TabPaymentMethod`,
       );
+  }
+}
+
+function calcComplementPrice(
+  priceMode: ComplementPriceMode,
+  options: Array<{ extraPrice: number; quantity: number }>,
+): number {
+  if (options.length === 0) return 0;
+  switch (priceMode) {
+    case ComplementPriceMode.SUM_OF_SELECTED:
+      return options.reduce((sum, o) => sum + o.extraPrice * o.quantity, 0);
+    case ComplementPriceMode.AVERAGE_OF_SELECTED: {
+      const totalQty = options.reduce((sum, o) => sum + o.quantity, 0);
+      const totalPrice = options.reduce(
+        (sum, o) => sum + o.extraPrice * o.quantity,
+        0,
+      );
+      return totalQty > 0 ? totalPrice / totalQty : 0;
+    }
+    case ComplementPriceMode.HIGHEST_SELECTED:
+      return Math.max(...options.map((o) => o.extraPrice));
+    case ComplementPriceMode.LOWEST_SELECTED:
+      return Math.min(...options.map((o) => o.extraPrice));
   }
 }
 
@@ -190,9 +215,34 @@ export class OrdersService {
         disponivel: true,
       },
       include: {
-        optionGroups: {
+        productComplements: {
+          where: { complement: { isActive: true, deletedAt: null } },
+          orderBy: { sortOrder: 'asc' },
           include: {
-            optionGroup: { include: { options: true } },
+            complement: {
+              select: {
+                id: true,
+                name: true,
+                selectionRule: true,
+                priceMode: true,
+                minSelections: true,
+                maxSelections: true,
+                complementOptions: {
+                  where: { isVisible: true },
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    option: {
+                      select: {
+                        id: true,
+                        name: true,
+                        stockStatus: true,
+                        isActive: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -206,8 +256,20 @@ export class OrdersService {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    // ── Phase 1: compute base prices (product.preco + option modifiers) ──────
+    // ── Phase 1: compute base prices (product.preco + complement modifiers) ──────
     let originalSubtotal = 0;
+    type ComplementOptionCreate = {
+      optionId: number;
+      optionNameSnapshot: string;
+      optionPriceSnapshot: number;
+      quantity: number;
+    };
+    type ComplementCreate = {
+      complementId: number;
+      complementNameSnapshot: string;
+      selectionRuleSnapshot: ComplementSelectionRule;
+      selectedOptions: { create: ComplementOptionCreate[] };
+    };
     type ItemBase = {
       productId: number;
       productNameSnapshot: string;
@@ -215,103 +277,116 @@ export class OrdersService {
       quantity: number;
       baseUnitPrice: number;
       categoryId: number | null;
-      selectedOptions:
-        | typeof Prisma.JsonNull
-        | Array<{
-            optionGroupId: number;
-            optionGroupName: string;
-            optionId: number;
-            nome: string;
-            priceModifier: number;
-          }>;
+      complementsCreate: ComplementCreate[];
       itemNotes?: string;
     };
     const itemsBase: ItemBase[] = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       let baseUnitPrice = product.preco;
-      const selectedOptionSnapshots: Array<{
-        optionGroupId: number;
-        optionGroupName: string;
-        optionId: number;
-        nome: string;
-        priceModifier: number;
-      }> = [];
-      const productGroups = product.optionGroups
-        .map((link) => link.optionGroup)
-        .filter((group) => group.ativo);
+      const complementsCreate: ComplementCreate[] = [];
 
-      if (item.selectedOptions?.length) {
-        const selectedByGroup = new Map<number, typeof item.selectedOptions>();
-        for (const sel of item.selectedOptions) {
-          const arr = selectedByGroup.get(sel.optionGroupId) ?? [];
-          arr.push(sel);
-          selectedByGroup.set(sel.optionGroupId, arr);
+      const productCompByCompId = new Map(
+        product.productComplements.map((pc) => [pc.complement.id, pc]),
+      );
+
+      for (const selComp of item.selectedComplements ?? []) {
+        const productComp = productCompByCompId.get(selComp.complementId);
+        if (!productComp) {
+          throw new BadRequestException(
+            `Complemento ${selComp.complementId} não disponível para este produto.`,
+          );
         }
+        const complement = productComp.complement;
+        const selectedOpts = selComp.selectedOptions ?? [];
+        const totalQty = selectedOpts.reduce(
+          (sum, o) => sum + (o.quantity ?? 1),
+          0,
+        );
 
-        for (const [groupId, sels] of selectedByGroup) {
-          const group = productGroups.find((g) => g.id === groupId);
-          if (!group)
+        if (
+          complement.selectionRule === ComplementSelectionRule.SINGLE &&
+          totalQty !== 1
+        ) {
+          throw new BadRequestException(
+            `${complement.name}: selecione exatamente 1 opção.`,
+          );
+        }
+        if (
+          complement.selectionRule === ComplementSelectionRule.MULTI_NO_REPEAT
+        ) {
+          const uniqueIds = new Set(selectedOpts.map((o) => o.optionId));
+          if (uniqueIds.size !== selectedOpts.length) {
             throw new BadRequestException(
-              `Grupo de opções ${groupId} inválido.`,
+              `${complement.name}: opções repetidas não permitidas.`,
             );
-
-          const resolvedOptions = sels.map((s) => {
-            const opt = group.options.find(
-              (o) => o.id === s.optionId && o.available,
-            );
-            if (!opt)
-              throw new BadRequestException(
-                `Opção ${s.optionId} inválida ou indisponível.`,
-              );
-            return opt;
-          });
-
-          if (group.priceMode === OptionPriceMode.SUM) {
-            baseUnitPrice += resolvedOptions.reduce(
-              (sum, o) => sum + o.priceModifier,
-              0,
-            );
-          } else if (group.priceMode === OptionPriceMode.HIGHEST) {
-            baseUnitPrice += Math.max(
-              ...resolvedOptions.map((o) => o.priceModifier),
-            );
-          } else {
-            baseUnitPrice = Math.max(
-              ...resolvedOptions.map((o) => o.priceModifier),
-            );
-          }
-
-          for (const opt of resolvedOptions) {
-            selectedOptionSnapshots.push({
-              optionGroupId: group.id,
-              optionGroupName: group.nome,
-              optionId: opt.id,
-              nome: opt.nome,
-              priceModifier: opt.priceModifier,
-            });
           }
         }
+        if (totalQty < complement.minSelections) {
+          throw new BadRequestException(
+            `${complement.name}: selecione pelo menos ${complement.minSelections} opção(ões).`,
+          );
+        }
+        if (
+          complement.maxSelections > 0 &&
+          totalQty > complement.maxSelections
+        ) {
+          throw new BadRequestException(
+            `${complement.name}: selecione no máximo ${complement.maxSelections} opção(ões).`,
+          );
+        }
+
+        const optionSnaps: ComplementOptionCreate[] = [];
+        for (const selOpt of selectedOpts) {
+          const compOpt = complement.complementOptions.find(
+            (co) => co.option.id === selOpt.optionId,
+          );
+          if (!compOpt) {
+            throw new BadRequestException(
+              `Opção ${selOpt.optionId} não pertence ao complemento ${complement.name}.`,
+            );
+          }
+          if (
+            !compOpt.option.isActive ||
+            compOpt.option.stockStatus !== OptionStockStatus.ACTIVE
+          ) {
+            throw new BadRequestException(
+              `Opção ${compOpt.option.name} está indisponível.`,
+            );
+          }
+          optionSnaps.push({
+            optionId: selOpt.optionId,
+            optionNameSnapshot: compOpt.option.name,
+            optionPriceSnapshot: Number(compOpt.extraPrice),
+            quantity: selOpt.quantity ?? 1,
+          });
+        }
+
+        baseUnitPrice += calcComplementPrice(
+          complement.priceMode,
+          optionSnaps.map((o) => ({
+            extraPrice: o.optionPriceSnapshot,
+            quantity: o.quantity,
+          })),
+        );
+        complementsCreate.push({
+          complementId: complement.id,
+          complementNameSnapshot: complement.name,
+          selectionRuleSnapshot: complement.selectionRule,
+          selectedOptions: { create: optionSnaps },
+        });
       }
 
-      for (const group of productGroups) {
-        const selectedCount = selectedOptionSnapshots.filter(
-          (option) => option.optionGroupId === group.id,
-        ).length;
-        if (
-          group.required &&
-          selectedCount < Math.max(1, group.minSelections)
-        ) {
-          throw new BadRequestException(`Selecione ${group.nome}.`);
-        }
-        if (selectedCount < group.minSelections) {
-          throw new BadRequestException(
-            `Selecione pelo menos ${group.minSelections} opções em ${group.nome}.`,
+      // Validate required complements that were not submitted
+      for (const pc of product.productComplements) {
+        if (pc.complement.minSelections > 0) {
+          const submitted = (item.selectedComplements ?? []).some(
+            (sc) => sc.complementId === pc.complement.id,
           );
-        }
-        if (selectedCount > group.maxSelections) {
-          throw new BadRequestException(
-            `Selecione no máximo ${group.maxSelections} opções em ${group.nome}.`,
-          );
+          if (!submitted) {
+            throw new BadRequestException(
+              `${pc.complement.name}: selecione pelo menos ${pc.complement.minSelections} opção(ões).`,
+            );
+          }
         }
       }
 
@@ -324,9 +399,7 @@ export class OrdersService {
         quantity: item.quantity,
         baseUnitPrice,
         categoryId: product.categoryId,
-        selectedOptions: selectedOptionSnapshots.length
-          ? selectedOptionSnapshots
-          : Prisma.JsonNull,
+        complementsCreate,
         itemNotes: item.itemNotes,
       };
     });
@@ -370,13 +443,19 @@ export class OrdersService {
 
       promoSubtotal += bestPrice * item.quantity;
 
-      const { baseUnitPrice, categoryId, ...itemRest } = item;
       return {
-        ...itemRest,
+        productId: item.productId,
+        productNameSnapshot: item.productNameSnapshot,
+        productPriceSnapshot: item.productPriceSnapshot,
+        quantity: item.quantity,
+        itemNotes: item.itemNotes,
         unitPrice: bestPrice,
         itemTotal: bestPrice * item.quantity,
-        precoOriginal: bestPromoId != null ? baseUnitPrice : null,
+        precoOriginal: bestPromoId != null ? item.baseUnitPrice : null,
         appliedPromotionId: bestPromoId,
+        ...(item.complementsCreate.length > 0
+          ? { selectedComplements: { create: item.complementsCreate } }
+          : {}),
       };
     });
 
@@ -430,16 +509,20 @@ export class OrdersService {
 
             if (couponDiscount > promoSaving) {
               // coupon wins: strip promo from items, use original prices
-              finalItemsData = itemsBase.map((item) => {
-                const { baseUnitPrice, categoryId, ...rest } = item;
-                return {
-                  ...rest,
-                  unitPrice: baseUnitPrice,
-                  itemTotal: baseUnitPrice * item.quantity,
-                  precoOriginal: null,
-                  appliedPromotionId: null,
-                };
-              });
+              finalItemsData = itemsBase.map((item) => ({
+                productId: item.productId,
+                productNameSnapshot: item.productNameSnapshot,
+                productPriceSnapshot: item.productPriceSnapshot,
+                quantity: item.quantity,
+                itemNotes: item.itemNotes,
+                unitPrice: item.baseUnitPrice,
+                itemTotal: item.baseUnitPrice * item.quantity,
+                precoOriginal: null,
+                appliedPromotionId: null,
+                ...(item.complementsCreate.length > 0
+                  ? { selectedComplements: { create: item.complementsCreate } }
+                  : {}),
+              }));
               finalSubtotal = originalSubtotal;
               discountAmount = couponDiscount;
               couponId = coupon.id;
@@ -825,7 +908,6 @@ export class OrdersService {
         productPriceSnapshot: product.preco,
         quantity: item.quantity,
         unitPrice,
-        selectedOptions: Prisma.JsonNull,
         itemNotes: item.itemNotes,
         itemTotal,
       };
@@ -1022,7 +1104,13 @@ export class OrdersService {
     const order = await this.prisma.order.findFirst({
       where: { id, restaurantId },
       include: {
-        items: true,
+        items: {
+          include: {
+            selectedComplements: {
+              include: { selectedOptions: true },
+            },
+          },
+        },
         history: { orderBy: { createdAt: 'asc' } },
       },
     });

@@ -24,10 +24,23 @@ const ALLOWED_ORDER_ORIGINS = [
 
 export class SelectedOptionDto {
   @IsInt()
-  optionGroupId: number;
-
-  @IsInt()
   optionId: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantity?: number;
+}
+
+export class SelectedComplementDto {
+  @IsInt()
+  @Min(1)
+  complementId: number;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => SelectedOptionDto)
+  selectedOptions?: SelectedOptionDto[];
 }
 
 export class OrderItemDto {
@@ -41,8 +54,8 @@ export class OrderItemDto {
 
   @IsOptional()
   @ValidateNested({ each: true })
-  @Type(() => SelectedOptionDto)
-  selectedOptions?: SelectedOptionDto[];
+  @Type(() => SelectedComplementDto)
+  selectedComplements?: SelectedComplementDto[];
 
   @IsOptional()
   @IsString()
