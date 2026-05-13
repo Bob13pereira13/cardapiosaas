@@ -10,17 +10,44 @@ import {
   UseGuards,
   Request,
   Query,
+  ForbiddenException,
+  HttpCode,
+  HttpStatus,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PaginateProductsDto } from './dto/paginate-products.dto';
+import { AddComplementToProductDto } from './dto/add-complement-to-product.dto';
+import { ReorderProductComplementsDto } from './dto/reorder-product-complements.dto';
+import { BatchUpdateProductsDto } from './dto/batch-update-products.dto';
 
 type AuthReq = {
-  user: { id: number; accountId: number; activeRestaurantId: number };
+  user: {
+    id: number;
+    accountId: number;
+    activeRestaurantId: number;
+    role: MembershipRole;
+    isPlatformAdmin?: boolean;
+  };
 };
+
+const WRITE_ROLES: MembershipRole[] = [
+  MembershipRole.OWNER,
+  MembershipRole.MANAGER,
+];
+
+function requireWriteRole(req: AuthReq): void {
+  if (!req.user.isPlatformAdmin && !WRITE_ROLES.includes(req.user.role)) {
+    throw new ForbiddenException(
+      'Apenas OWNER ou MANAGER podem realizar esta operação.',
+    );
+  }
+}
 
 @Controller('products')
 @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
@@ -29,11 +56,11 @@ export class ProductsController {
 
   @Post()
   create(@Request() req: AuthReq, @Body() data: CreateProductDto) {
-    return this.productsService.create({
-      ...data,
-      restaurantId: req.user.activeRestaurantId,
-      accountId: req.user.accountId,
-    });
+    return this.productsService.create(
+      req.user.activeRestaurantId,
+      req.user.accountId,
+      data,
+    );
   }
 
   @Get()
@@ -48,6 +75,13 @@ export class ProductsController {
   @Patch('reorder')
   reorder(@Request() req: AuthReq, @Body() body: { ids: number[] }) {
     return this.productsService.reorder(req.user.activeRestaurantId, body.ids);
+  }
+
+  @Post('batch-update')
+  @HttpCode(HttpStatus.OK)
+  batchUpdate(@Request() req: AuthReq, @Body() dto: BatchUpdateProductsDto) {
+    requireWriteRole(req);
+    return this.productsService.batchUpdate(req.user.activeRestaurantId, dto);
   }
 
   @Post(':id/duplicate')
@@ -65,9 +99,10 @@ export class ProductsController {
     @Body() data: UpdateProductDto,
   ) {
     return this.productsService.update(
-      Number(id),
       req.user.activeRestaurantId,
+      Number(id),
       data,
+      req.user.accountId,
     );
   }
 
@@ -87,31 +122,49 @@ export class ProductsController {
     );
   }
 
-  @Post(':id/complementos/:complementoId')
-  linkComplemento(
-    @Param('id') id: string,
-    @Param('complementoId') complementoId: string,
+  // ── complement relationship endpoints ──
+
+  @Post(':id/complements')
+  addComplement(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddComplementToProductDto,
     @Request() req: AuthReq,
-    @Body() body: { ordem?: number },
   ) {
-    return this.productsService.linkComplemento(
-      Number(id),
-      Number(complementoId),
+    requireWriteRole(req);
+    return this.productsService.addComplement(
       req.user.activeRestaurantId,
-      body.ordem,
+      id,
+      dto,
     );
   }
 
-  @Delete(':id/complementos/:complementoId')
-  unlinkComplemento(
-    @Param('id') id: string,
-    @Param('complementoId') complementoId: string,
+  @Delete(':id/complements/:complementId')
+  @HttpCode(HttpStatus.OK)
+  removeComplement(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('complementId', ParseIntPipe) complementId: number,
     @Request() req: AuthReq,
   ) {
-    return this.productsService.unlinkComplemento(
-      Number(id),
-      Number(complementoId),
+    requireWriteRole(req);
+    return this.productsService.removeComplement(
       req.user.activeRestaurantId,
+      id,
+      complementId,
+    );
+  }
+
+  @Post(':id/reorder-complements')
+  @HttpCode(HttpStatus.OK)
+  reorderComplements(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReorderProductComplementsDto,
+    @Request() req: AuthReq,
+  ) {
+    requireWriteRole(req);
+    return this.productsService.reorderComplements(
+      req.user.activeRestaurantId,
+      id,
+      dto,
     );
   }
 
