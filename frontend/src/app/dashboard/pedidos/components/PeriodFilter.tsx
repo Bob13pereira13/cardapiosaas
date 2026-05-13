@@ -17,8 +17,8 @@ type Props = {
 
 const PERIOD_OPTIONS: { value: PeriodFilterValue; label: string }[] = [
   { value: 'today', label: 'Hoje' },
-  { value: 'last_week', label: 'Últimos 7 dias' },
-  { value: 'last_month', label: 'Últimos 30 dias' },
+  { value: 'last_week', label: 'Última semana' },
+  { value: 'last_month', label: 'Último mês' },
   { value: 'custom', label: 'Personalizado' },
 ]
 

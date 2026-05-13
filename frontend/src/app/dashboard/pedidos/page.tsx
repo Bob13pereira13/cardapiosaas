@@ -1,13 +1,11 @@
 'use client'
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { io, Socket } from 'socket.io-client'
 import { Download, Plus, Search } from 'lucide-react'
 import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
-import { getAllOrigins, ORIGIN_META, OrderOrigin } from '@/lib/order-origin'
 import {
   DeliveryType,
   Order,
@@ -21,40 +19,47 @@ import { PageHeader } from '@/components/admin/PageHeader'
 import { OrderListItem } from '@/components/admin/OrderListItem'
 import { OrderDetailPanel } from '@/components/admin/OrderDetailPanel'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { useOrderUpdates } from '@/hooks/useOrderUpdates'
+import { useActiveMarketplaces } from '@/hooks/useActiveMarketplaces'
+import { OriginFilter, OriginKey } from './components/OriginFilter'
+import { StatusFilter, StatusGroup, STATUS_GROUPS } from './components/StatusFilter'
+import { PeriodFilter, PeriodFilterValue } from './components/PeriodFilter'
 
-type StatusFilter = 'ALL' | 'PENDING' | 'IN_PREPARATION' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELED'
-type PeriodFilter = 'TODAY' | 'WEEK' | 'MONTH'
+// TODO: backend GET /orders/summary com agregações byOrigin/byStatus
+// pra remover dependência de fetch full + cálculo client-side
+
+const TOO_MANY_THRESHOLD = 500
+
 type ManualItem = { productId: string; quantity: number; itemNotes: string }
-
-const STATUS_FILTERS: Array<{ label: string; value: StatusFilter; statuses?: OrderStatus[] }> = [
-  { label: 'Todos', value: 'ALL' },
-  { label: 'Pendentes', value: 'PENDING', statuses: ['PENDING', 'CONFIRMED'] },
-  { label: 'Em preparo', value: 'IN_PREPARATION', statuses: ['IN_PREPARATION', 'READY'] },
-  { label: 'Sairam', value: 'OUT_FOR_DELIVERY', statuses: ['OUT_FOR_DELIVERY'] },
-  { label: 'Concluidos', value: 'DELIVERED', statuses: ['DELIVERED'] },
-  { label: 'Cancelados', value: 'CANCELED', statuses: ['CANCELED'] },
-]
-
-const PERIODS: Array<{ label: string; value: PeriodFilter }> = [
-  { label: 'Hoje', value: 'TODAY' },
-  { label: 'Ultima semana', value: 'WEEK' },
-  { label: 'Ultimo mes', value: 'MONTH' },
-]
-
 const INITIAL_MANUAL_ITEM: ManualItem = { productId: '', quantity: 1, itemNotes: '' }
 
-function getDateFrom(period: PeriodFilter) {
+function getDateFrom(period: PeriodFilterValue): string | null {
   const date = new Date()
-  if (period === 'TODAY') date.setHours(0, 0, 0, 0)
-  if (period === 'WEEK') date.setDate(date.getDate() - 7)
-  if (period === 'MONTH') date.setMonth(date.getMonth() - 1)
-  return date.toISOString()
+  if (period === 'today') {
+    date.setHours(0, 0, 0, 0)
+    return date.toISOString()
+  }
+  if (period === 'last_week') {
+    date.setDate(date.getDate() - 7)
+    return date.toISOString()
+  }
+  if (period === 'last_month') {
+    date.setMonth(date.getMonth() - 1)
+    return date.toISOString()
+  }
+  return null // custom: sem restrição de data
 }
 
 function playNewOrderSound() {
@@ -85,12 +90,12 @@ export default function PedidosPage() {
   const [products, setProducts] = useState<ProductOption[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
-  const [originFilter, setOriginFilter] = useState<OrderOrigin | 'ALL'>('ALL')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('TODAY')
+  const [originFilter, setOriginFilter] = useState<OriginKey | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusGroup | null>(null)
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilterValue>('today')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
-  const [connected, setConnected] = useState(false)
+  const [tooMany, setTooMany] = useState(false)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [highlightedIds, setHighlightedIds] = useState<Set<number>>(new Set())
   const [manualOpen, setManualOpen] = useState(false)
@@ -106,7 +111,49 @@ export default function PedidosPage() {
   const [manualCity, setManualCity] = useState('')
   const [manualZipcode, setManualZipcode] = useState('')
   const [manualItems, setManualItems] = useState<ManualItem[]>([INITIAL_MANUAL_ITEM])
-  const socketRef = useRef<Socket | null>(null)
+
+  const { asMap: activeMarketplaces } = useActiveMarketplaces()
+
+  const { connected } = useOrderUpdates({
+    onNew: (order) => {
+      setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)])
+      setHighlightedIds((current) => new Set(current).add(order.id))
+      toast.success(`Novo pedido #${order.orderNumber}`, {
+        description: `${order.customerName} - ${formatCurrency(order.total)}`,
+      })
+      playNewOrderSound()
+      window.setTimeout(() => {
+        setHighlightedIds((current) => {
+          const next = new Set(current)
+          next.delete(order.id)
+          return next
+        })
+      }, 9000)
+    },
+    onStatusChanged: ({ orderId, status }) => {
+      setOrders((current) =>
+        current.map((order) => (order.id === orderId ? { ...order, orderStatus: status } : order)),
+      )
+    },
+    onPaymentConfirmed: ({ orderId }) => {
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === orderId ? { ...order, paymentStatus: 'PAID' } : order,
+        ),
+      )
+    },
+    onWhatsappPrompt: ({ customerPhone, customerName }) => {
+      toast(`Enviar confirmacao de entrega para ${customerName} no WhatsApp?`, {
+        action: {
+          label: 'Sim',
+          onClick: () => {
+            const phone = customerPhone.replace(/\D/g, '')
+            window.open(`https://wa.me/${phone}?text=Seu+pedido+foi+entregue!`, '_blank')
+          },
+        },
+      })
+    },
+  })
 
   const selectedOrder = orders.find((order) => order.id === selectedId) ?? null
 
@@ -117,20 +164,26 @@ export default function PedidosPage() {
       return
     }
 
-    const params = new URLSearchParams({
-      limit: '100',
-      dateFrom: getDateFrom(periodFilter),
-    })
-    if (originFilter !== 'ALL') params.set('origin', originFilter)
+    const params = new URLSearchParams({ limit: String(TOO_MANY_THRESHOLD) })
+    const dateFrom = getDateFrom(periodFilter)
+    if (dateFrom) params.set('dateFrom', dateFrom)
 
     const response = await fetch(`${API_URL}/orders?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (handleUnauthorized(response)) return
     const data = (await response.json()) as Order[]
-    setOrders(data)
-    setSelectedId((current) => current ?? data[0]?.id ?? null)
-  }, [originFilter, periodFilter])
+
+    if (data.length >= TOO_MANY_THRESHOLD) {
+      setTooMany(true)
+      setOrders([])
+      setSelectedId(null)
+    } else {
+      setTooMany(false)
+      setOrders(data)
+      setSelectedId((current) => current ?? data[0]?.id ?? null)
+    }
+  }, [periodFilter])
 
   const loadProducts = useCallback(async () => {
     const token = getToken()
@@ -153,71 +206,44 @@ export default function PedidosPage() {
     void init()
   }, [loadOrders, loadProducts])
 
-  useEffect(() => {
-    const token = getToken()
-    if (!token) return
-
-    const socket = io(API_URL, { auth: { token } })
-    socketRef.current = socket
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
-    socket.on('order:new', (order: Order) => {
-      setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)])
-      setHighlightedIds((current) => new Set(current).add(order.id))
-      toast.success(`Novo pedido #${order.orderNumber}`, {
-        description: `${order.customerName} - ${formatCurrency(order.total)}`,
-      })
-      playNewOrderSound()
-      window.setTimeout(() => {
-        setHighlightedIds((current) => {
-          const next = new Set(current)
-          next.delete(order.id)
-          return next
-        })
-      }, 9000)
-    })
-    socket.on('order:status-changed', ({ orderId, status }: { orderId: number; status: OrderStatus }) => {
-      setOrders((current) =>
-        current.map((order) => (order.id === orderId ? { ...order, orderStatus: status } : order)),
-      )
-    })
-    socket.on('order:payment-confirmed', ({ orderId }: { orderId: number }) => {
-      setOrders((current) =>
-        current.map((order) => (order.id === orderId ? { ...order, paymentStatus: 'PAID' } : order)),
-      )
-    })
-    socket.on('whatsapp:prompt', ({ customerPhone, customerName }: { orderId: number; customerPhone: string; customerName: string }) => {
-      toast(`Enviar confirmacao de entrega para ${customerName} no WhatsApp?`, {
-        action: {
-          label: 'Sim',
-          onClick: () => {
-            const phone = customerPhone.replace(/\D/g, '')
-            window.open(`https://wa.me/${phone}?text=Seu+pedido+foi+entregue!`, '_blank')
-          },
-        },
-      })
-    })
-
-    return () => {
-      socket.disconnect()
+  // Origin counts from all fetched orders (regardless of filters)
+  const originCounts = useMemo(() => {
+    const counts: Record<string, number> = { _all: orders.length }
+    for (const order of orders) {
+      counts[order.origin] = (counts[order.origin] ?? 0) + 1
     }
-  }, [])
+    return counts
+  }, [orders])
+
+  // Orders narrowed by selected origin
+  const ordersByOrigin = useMemo(() => {
+    if (originFilter === null) return orders
+    return orders.filter((o) => o.origin === originFilter)
+  }, [orders, originFilter])
+
+  // Status counts from origin-filtered orders
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { _all: ordersByOrigin.length }
+    for (const order of ordersByOrigin) {
+      counts[order.orderStatus] = (counts[order.orderStatus] ?? 0) + 1
+    }
+    return counts as Record<OrderStatus | '_all', number>
+  }, [ordersByOrigin])
 
   const filteredOrders = useMemo(() => {
-    const statusMeta = STATUS_FILTERS.find((item) => item.value === statusFilter)
-    const allowedStatuses = statusMeta?.statuses
-    const normalizedSearch = search.trim().toLowerCase()
-
-    return orders.filter((order) => {
+    const group = statusFilter ? STATUS_GROUPS.find((g) => g.key === statusFilter) : null
+    const allowedStatuses = group?.statuses
+    const q = search.trim().toLowerCase()
+    return ordersByOrigin.filter((order) => {
       if (allowedStatuses && !allowedStatuses.includes(order.orderStatus)) return false
-      if (!normalizedSearch) return true
+      if (!q) return true
       return (
-        order.customerName.toLowerCase().includes(normalizedSearch) ||
-        String(order.orderNumber).includes(normalizedSearch) ||
-        order.customerPhone.includes(normalizedSearch)
+        order.customerName.toLowerCase().includes(q) ||
+        String(order.orderNumber).includes(q) ||
+        order.customerPhone.includes(q)
       )
     })
-  }, [orders, search, statusFilter])
+  }, [ordersByOrigin, statusFilter, search])
 
   const summary = useMemo(() => {
     const total = filteredOrders.reduce((sum, order) => sum + order.total, 0)
@@ -353,6 +379,12 @@ export default function PedidosPage() {
           }
         />
 
+        {tooMany && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Muitos pedidos no período. Refine o filtro de período ou peça paginação.
+          </div>
+        )}
+
         <div className="flex flex-col gap-3 rounded-lg border bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row">
             <div className="relative flex-1">
@@ -364,68 +396,25 @@ export default function PedidosPage() {
                 className="pl-9"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <span className={cn('h-2 w-2 rounded-full', connected ? 'bg-brand-red' : 'bg-zinc-300')} />
-              {connected ? 'Tempo real ativo' : 'Tempo real desconectado'}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <span
+                  className={cn('h-2 w-2 rounded-full', connected ? 'bg-brand-red' : 'bg-zinc-300')}
+                />
+                {connected ? 'Tempo real ativo' : 'Tempo real desconectado'}
+              </div>
+              <PeriodFilter value={periodFilter} onChange={setPeriodFilter} />
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={originFilter === 'ALL' ? 'default' : 'outline'}
-              size="sm"
-              className={originFilter === 'ALL' ? 'bg-brand-red hover:bg-brand-red/90' : ''}
-              onClick={() => setOriginFilter('ALL')}
-            >
-              Todos
-            </Button>
-            {getAllOrigins().map((origin) => {
-              const meta = ORIGIN_META[origin]
-              return (
-                <Button
-                  key={origin}
-                  variant={originFilter === origin ? 'default' : 'outline'}
-                  size="sm"
-                  title={meta.active ? meta.description : 'Em breve'}
-                  className={cn(
-                    originFilter === origin && 'bg-brand-red hover:bg-brand-red/90',
-                    !meta.active && 'opacity-50',
-                  )}
-                  onClick={() => setOriginFilter(origin)}
-                >
-                  {meta.label}
-                </Button>
-              )
-            })}
-          </div>
+          <OriginFilter
+            counts={originCounts}
+            selected={originFilter}
+            onChange={setOriginFilter}
+            activeMarketplaces={activeMarketplaces}
+          />
 
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTERS.map((filter) => (
-              <Button
-                key={filter.value}
-                variant={statusFilter === filter.value ? 'default' : 'outline'}
-                size="sm"
-                className={statusFilter === filter.value ? 'bg-zinc-950 hover:bg-zinc-800' : ''}
-                onClick={() => setStatusFilter(filter.value)}
-              >
-                {filter.label}
-              </Button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {PERIODS.map((period) => (
-              <Button
-                key={period.value}
-                variant={periodFilter === period.value ? 'default' : 'outline'}
-                size="sm"
-                className={periodFilter === period.value ? 'bg-brand-yellow text-zinc-950 hover:bg-brand-yellow/90' : ''}
-                onClick={() => setPeriodFilter(period.value)}
-              >
-                {period.label}
-              </Button>
-            ))}
-          </div>
+          <StatusFilter counts={statusCounts} selected={statusFilter} onChange={setStatusFilter} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[35%_1fr]">
@@ -477,10 +466,6 @@ export default function PedidosPage() {
             <p className="mt-1 text-xl font-bold text-zinc-950">{formatCurrency(summary.average)}</p>
           </div>
         </div>
-
-        <Link href="/dashboard/pedidos-old" className="inline-flex text-xs text-zinc-400 hover:text-brand-red">
-          ver versao antiga
-        </Link>
       </div>
 
       <Sheet open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
@@ -497,18 +482,28 @@ export default function PedidosPage() {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo pedido manual</DialogTitle>
-            <DialogDescription>Registre pedidos de balcao, telefone ou atendimento interno.</DialogDescription>
+            <DialogDescription>
+              Registre pedidos de balcao, telefone ou atendimento interno.
+            </DialogDescription>
           </DialogHeader>
 
           <form className="space-y-4" onSubmit={createManualOrder}>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Nome cliente</Label>
-                <Input value={manualName} onChange={(event) => setManualName(event.target.value)} required />
+                <Input
+                  value={manualName}
+                  onChange={(event) => setManualName(event.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Telefone</Label>
-                <Input value={manualPhone} onChange={(event) => setManualPhone(event.target.value)} required />
+                <Input
+                  value={manualPhone}
+                  onChange={(event) => setManualPhone(event.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Tipo</Label>
@@ -539,11 +534,31 @@ export default function PedidosPage() {
 
             {manualDeliveryType === 'DELIVERY' && (
               <div className="grid gap-3 rounded-lg bg-zinc-50 p-3 md:grid-cols-2">
-                <Input placeholder="Rua" value={manualStreet} onChange={(event) => setManualStreet(event.target.value)} />
-                <Input placeholder="Numero" value={manualNumber} onChange={(event) => setManualNumber(event.target.value)} />
-                <Input placeholder="Bairro" value={manualNeighborhood} onChange={(event) => setManualNeighborhood(event.target.value)} />
-                <Input placeholder="Cidade" value={manualCity} onChange={(event) => setManualCity(event.target.value)} />
-                <Input placeholder="CEP" value={manualZipcode} onChange={(event) => setManualZipcode(event.target.value)} />
+                <Input
+                  placeholder="Rua"
+                  value={manualStreet}
+                  onChange={(event) => setManualStreet(event.target.value)}
+                />
+                <Input
+                  placeholder="Numero"
+                  value={manualNumber}
+                  onChange={(event) => setManualNumber(event.target.value)}
+                />
+                <Input
+                  placeholder="Bairro"
+                  value={manualNeighborhood}
+                  onChange={(event) => setManualNeighborhood(event.target.value)}
+                />
+                <Input
+                  placeholder="Cidade"
+                  value={manualCity}
+                  onChange={(event) => setManualCity(event.target.value)}
+                />
+                <Input
+                  placeholder="CEP"
+                  value={manualZipcode}
+                  onChange={(event) => setManualZipcode(event.target.value)}
+                />
               </div>
             )}
 
@@ -560,7 +575,10 @@ export default function PedidosPage() {
                 </Button>
               </div>
               {manualItems.map((item, index) => (
-                <div key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_90px_1fr_auto]">
+                <div
+                  key={index}
+                  className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_90px_1fr_auto]"
+                >
                   <select
                     value={item.productId}
                     onChange={(event) => updateManualItem(index, { productId: event.target.value })}
@@ -578,7 +596,9 @@ export default function PedidosPage() {
                     type="number"
                     min={1}
                     value={item.quantity}
-                    onChange={(event) => updateManualItem(index, { quantity: Number(event.target.value) || 1 })}
+                    onChange={(event) =>
+                      updateManualItem(index, { quantity: Number(event.target.value) || 1 })
+                    }
                   />
                   <Input
                     placeholder="Observacao do item"
@@ -589,7 +609,11 @@ export default function PedidosPage() {
                     type="button"
                     variant="ghost"
                     disabled={manualItems.length === 1}
-                    onClick={() => setManualItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    onClick={() =>
+                      setManualItems((current) =>
+                        current.filter((_, itemIndex) => itemIndex !== index),
+                      )
+                    }
                   >
                     Remover
                   </Button>
@@ -599,14 +623,21 @@ export default function PedidosPage() {
 
             <div className="space-y-1.5">
               <Label>Observacoes gerais</Label>
-              <Textarea value={manualNotes} onChange={(event) => setManualNotes(event.target.value)} />
+              <Textarea
+                value={manualNotes}
+                onChange={(event) => setManualNotes(event.target.value)}
+              />
             </div>
 
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setManualOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={creatingManual} className="bg-brand-red hover:bg-brand-red/90">
+              <Button
+                type="submit"
+                disabled={creatingManual}
+                className="bg-brand-red hover:bg-brand-red/90"
+              >
                 {creatingManual ? 'Criando...' : 'Criar pedido'}
               </Button>
             </div>

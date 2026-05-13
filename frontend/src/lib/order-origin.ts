@@ -5,15 +5,17 @@ import {
   LucideIcon,
   ShoppingBag,
   Store,
+  Utensils,
 } from 'lucide-react'
 
 export type OrderOrigin =
   | 'WEBSITE'
   | 'MANUAL'
   | 'WHATSAPP_BOT'
+  | 'MESA'
   | 'IFOOD'
-  | 'RAPPI_99'
-  | 'UBER_EATS'
+  | 'NINETYNINEFOOD'
+  | 'KEETA'
   | 'OTHER'
 
 type OriginMeta = {
@@ -35,8 +37,8 @@ export const ORIGIN_META: Record<OrderOrigin, OriginMeta> = {
     className: 'border-red-200 bg-brand-red-soft text-brand-red',
   },
   MANUAL: {
-    label: 'Balcao',
-    shortLabel: 'Balcao',
+    label: 'Balcão',
+    shortLabel: 'Balcão',
     description: 'Pedido lancado no painel',
     active: true,
     icon: Store,
@@ -50,26 +52,34 @@ export const ORIGIN_META: Record<OrderOrigin, OriginMeta> = {
     icon: Bot,
     className: 'border-sky-200 bg-sky-50 text-sky-700',
   },
+  MESA: {
+    label: 'Mesa',
+    shortLabel: 'Mesa',
+    description: 'Pedido via QR code de mesa',
+    active: true,
+    icon: Utensils,
+    className: 'border-violet-200 bg-violet-50 text-violet-700',
+  },
   IFOOD: {
     label: 'iFood',
     shortLabel: 'iFood',
-    description: 'Integracao em breve',
+    description: 'Integração iFood',
     active: false,
     icon: ShoppingBag,
     className: 'border-zinc-200 bg-zinc-50 text-zinc-500',
   },
-  RAPPI_99: {
-    label: '99/Rappi',
-    shortLabel: '99/Rappi',
-    description: 'Integracao em breve',
+  NINETYNINEFOOD: {
+    label: '99Food',
+    shortLabel: '99',
+    description: 'Integração 99Food',
     active: false,
     icon: ShoppingBag,
     className: 'border-zinc-200 bg-zinc-50 text-zinc-500',
   },
-  UBER_EATS: {
-    label: 'Uber Eats',
-    shortLabel: 'Uber Eats',
-    description: 'Integracao em breve',
+  KEETA: {
+    label: 'Keeta',
+    shortLabel: 'Keeta',
+    description: 'Integração Keeta',
     active: false,
     icon: ShoppingBag,
     className: 'border-zinc-200 bg-zinc-50 text-zinc-500',
@@ -84,12 +94,22 @@ export const ORIGIN_META: Record<OrderOrigin, OriginMeta> = {
   },
 }
 
-export function getActiveOrigins() {
-  return getAllOrigins().filter((origin) => ORIGIN_META[origin].active)
+const DISPLAYED_ORIGINS: OrderOrigin[] = [
+  'WEBSITE',
+  'MANUAL',
+  'WHATSAPP_BOT',
+  'MESA',
+  'IFOOD',
+  'NINETYNINEFOOD',
+  'KEETA',
+]
+
+export function getActiveOrigins(): OrderOrigin[] {
+  return DISPLAYED_ORIGINS.filter((origin) => ORIGIN_META[origin].active)
 }
 
-export function getAllOrigins() {
-  return Object.keys(ORIGIN_META) as OrderOrigin[]
+export function getAllOrigins(): OrderOrigin[] {
+  return DISPLAYED_ORIGINS
 }
 
 export function formatOriginLabel(origin?: OrderOrigin | null) {
