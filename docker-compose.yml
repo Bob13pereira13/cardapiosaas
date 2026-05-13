@@ -33,6 +33,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      MARKETPLACE_ENCRYPTION_KEY: ${MARKETPLACE_ENCRYPTION_KEY:?MARKETPLACE_ENCRYPTION_KEY env var is required}
     ports:
       - "3000:3000"
     volumes:
