@@ -20,6 +20,7 @@ import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
 import { Order, OrderStatus, STATUS_LABEL, formatCurrency } from '@/lib/order-types'
 import { cn } from '@/lib/utils'
+import { useOrderUpdates } from '@/hooks/useOrderUpdates'
 
 type Customer = {
   id: number
@@ -121,6 +122,29 @@ export default function DashboardInicioPage() {
 
     void init()
   }, [loadData])
+
+  useOrderUpdates({
+    skip:
+      account?.subscriptionStatus === 'OVERDUE' ||
+      account?.subscriptionStatus === 'CANCELED',
+    onNew: (order) => {
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === order.id)
+        if (exists) return prev.map((o) => (o.id === order.id ? order : o))
+        return [order, ...prev].slice(0, 100)
+      })
+    },
+    onStatusChanged: ({ orderId, status }) => {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, orderStatus: status } : o)),
+      )
+    },
+    onPaymentConfirmed: ({ orderId }) => {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, paymentStatus: 'PAID' } : o)),
+      )
+    },
+  })
 
   const today = useMemo(() => new Date(), [])
   const yesterday = useMemo(() => {
