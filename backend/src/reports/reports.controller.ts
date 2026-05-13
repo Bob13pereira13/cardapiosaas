@@ -27,6 +27,7 @@ const SUMMARY_PERIODS = [
 type SummaryPeriod = (typeof SUMMARY_PERIODS)[number];
 
 const VALID_GRANULARITIES: Granularity[] = ['day', 'month'];
+const HEATMAP_PERIODS: TrendPeriod[] = ['last_7d', 'last_30d', 'last_90d'];
 const ALL_TREND_PERIODS: TrendPeriod[] = [
   'current_month',
   'current_week',
@@ -172,5 +173,20 @@ export class ReportsController {
       );
     }
     return this.trends.originDistribution(req.user.activeRestaurantId, p);
+  }
+
+  @Get('trends/heatmap')
+  @UseInterceptors(CacheInterceptor)
+  trendsHeatmap(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period?: string,
+  ) {
+    const p = (period ?? 'last_30d') as 'last_7d' | 'last_30d' | 'last_90d';
+    if (!HEATMAP_PERIODS.includes(p)) {
+      throw new BadRequestException(
+        `period inválido para heatmap. Use: last_7d, last_30d, last_90d`,
+      );
+    }
+    return this.trends.heatmap(req.user.activeRestaurantId, p);
   }
 }

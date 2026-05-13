@@ -69,3 +69,29 @@ export interface OriginResponse {
   totalRevenue: number;
   origins: OriginDataPoint[];
 }
+
+export interface HeatmapCell {
+  hour: number;
+  orders: number;
+  revenue: number;
+}
+
+export interface HeatmapDay {
+  dayOfWeek: number;
+  dayName: string;
+  hours: HeatmapCell[];
+}
+
+export interface HeatmapPeak {
+  dayOfWeek: number;
+  hour: number;
+  orders: number;
+}
+
+export interface HeatmapResponse {
+  period: string;
+  from: string;
+  to: string;
+  matrix: HeatmapDay[];
+  peak: HeatmapPeak | null;
+}

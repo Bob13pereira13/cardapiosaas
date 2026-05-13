@@ -3,6 +3,7 @@ import { Prisma, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Granularity, TrendPeriod } from './dto/trend-query.dto';
 import type {
+  HeatmapResponse,
   OriginResponse,
   PeriodRange,
   RevenueResponse,
@@ -398,6 +399,77 @@ export class TrendsService {
             ? Math.round((Number(r.revenue) / totalRevenue) * 10000) / 100
             : 0,
       })),
+    };
+  }
+
+  async heatmap(
+    restaurantId: number,
+    period: 'last_7d' | 'last_30d' | 'last_90d' = 'last_30d',
+  ): Promise<HeatmapResponse> {
+    const range = getLastNRange(period);
+
+    type RawRow = {
+      dayOfWeek: number;
+      hour: number;
+      orders: number;
+      revenue: string;
+    };
+
+    const rows = await this.prisma.$queryRaw<RawRow[]>`
+      SELECT
+        EXTRACT(DOW  FROM "createdAt")::int AS "dayOfWeek",
+        EXTRACT(HOUR FROM "createdAt")::int AS hour,
+        COUNT(*)::int                       AS orders,
+        COALESCE(SUM(total), 0)             AS revenue
+      FROM "Order"
+      WHERE "restaurantId" = ${restaurantId}
+        AND "createdAt"    >= ${range.from}
+        AND "createdAt"    <= ${range.to}
+        AND "orderStatus"  != ${OrderStatus.CANCELED}::"OrderStatus"
+      GROUP BY "dayOfWeek", hour
+      ORDER BY "dayOfWeek", hour
+    `;
+
+    const map = new Map<string, { orders: number; revenue: number }>();
+    for (const row of rows) {
+      map.set(`${row.dayOfWeek}:${row.hour}`, {
+        orders: Number(row.orders),
+        revenue: Math.round(Number(row.revenue) * 100) / 100,
+      });
+    }
+
+    // Build full 7×24 zero-filled matrix
+    const matrix: HeatmapResponse['matrix'] = DAY_NAMES.map((dayName, dow) => ({
+      dayOfWeek: dow,
+      dayName,
+      hours: Array.from({ length: 24 }, (_, hour) => {
+        const cell = map.get(`${dow}:${hour}`) ?? { orders: 0, revenue: 0 };
+        return { hour, orders: cell.orders, revenue: cell.revenue };
+      }),
+    }));
+
+    // Peak = cell with max orders (null when all zero)
+    let peak: HeatmapResponse['peak'] = null;
+    let maxOrders = 0;
+    for (const day of matrix) {
+      for (const cell of day.hours) {
+        if (cell.orders > maxOrders) {
+          maxOrders = cell.orders;
+          peak = {
+            dayOfWeek: day.dayOfWeek,
+            hour: cell.hour,
+            orders: cell.orders,
+          };
+        }
+      }
+    }
+
+    return {
+      period,
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+      matrix,
+      peak,
     };
   }
 }

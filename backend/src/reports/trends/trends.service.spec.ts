@@ -161,4 +161,40 @@ describe('TrendsService', () => {
     expect(result.data.length).toBeLessThanOrEqual(13); // boundary month
     expect(result.granularity).toBe('month');
   });
+
+  // ─── heatmap ───
+
+  it('T.11: heatmap returns matrix with 7 days each having 24 hours', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    const result = await service.heatmap(1, 'last_30d');
+
+    expect(result.matrix).toHaveLength(7);
+    result.matrix.forEach((day) => {
+      expect(day.hours).toHaveLength(24);
+    });
+    expect(result.period).toBe('last_30d');
+  });
+
+  it('T.12: heatmap with no orders → all zeros and peak=null', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    const result = await service.heatmap(1, 'last_30d');
+
+    const allZero = result.matrix.every((d) =>
+      d.hours.every((h) => h.orders === 0),
+    );
+    expect(allZero).toBe(true);
+    expect(result.peak).toBeNull();
+  });
+
+  it('T.13: heatmap dayNames are in Portuguese', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    const result = await service.heatmap(1, 'last_30d');
+
+    expect(result.matrix[0].dayName).toBe('Domingo');
+    expect(result.matrix[1].dayName).toBe('Segunda');
+    expect(result.matrix[6].dayName).toBe('Sábado');
+  });
 });
