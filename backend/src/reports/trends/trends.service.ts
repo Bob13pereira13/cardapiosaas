@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { Prisma, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Granularity, TrendPeriod } from './dto/trend-query.dto';
 import type {
+  OriginResponse,
   PeriodRange,
   RevenueResponse,
   SummaryResponse,
+  TopProductsResponse,
 } from './dto/period-comparison.dto';
 
 const DAY_NAMES = [
@@ -114,6 +116,17 @@ const VALID_COMBOS: Record<Granularity, TrendPeriod[]> = {
   day: ['last_7d', 'last_30d', 'last_90d'],
   month: ['last_12m', 'last_24m', 'current_year'],
 };
+
+function resolveRange(period: TrendPeriod): PeriodRange {
+  if (
+    period === 'current_month' ||
+    period === 'current_week' ||
+    period === 'current_year'
+  ) {
+    return getCurrentRange(period);
+  }
+  return getLastNRange(period);
+}
 
 @Injectable()
 export class TrendsService {
@@ -289,6 +302,102 @@ export class TrendsService {
         totalOrders,
         averageDaily,
       },
+    };
+  }
+
+  async topProducts(
+    restaurantId: number,
+    period: TrendPeriod = 'last_30d',
+    limit = 10,
+    orderBy: 'revenue' | 'quantity' = 'revenue',
+  ): Promise<TopProductsResponse> {
+    const limitClamped = Math.min(Math.max(1, limit), 50);
+    const range = resolveRange(period);
+
+    const orderCol =
+      orderBy === 'quantity'
+        ? Prisma.sql`"totalQuantity"`
+        : Prisma.sql`"totalRevenue"`;
+
+    type RawRow = {
+      productId: number | null;
+      name: string;
+      totalQuantity: number;
+      totalRevenue: string;
+    };
+
+    const rows = await this.prisma.$queryRaw<RawRow[]>(Prisma.sql`
+      SELECT
+        oi."productId",
+        COALESCE(
+          MAX(oi."productNameSnapshot"),
+          '[Produto #' || COALESCE(oi."productId"::text, '?') || ']'
+        )                                             AS name,
+        SUM(oi.quantity)::int                         AS "totalQuantity",
+        COALESCE(SUM(oi."itemTotal"), 0)              AS "totalRevenue"
+      FROM "OrderItem" oi
+      JOIN "Order" o ON oi."orderId" = o.id
+      WHERE o."restaurantId" = ${restaurantId}
+        AND o."createdAt"    >= ${range.from}
+        AND o."createdAt"    <= ${range.to}
+        AND o."orderStatus"  != ${OrderStatus.CANCELED}::"OrderStatus"
+      GROUP BY oi."productId"
+      ORDER BY ${orderCol} DESC
+      LIMIT ${limitClamped}
+    `);
+
+    return {
+      period,
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+      orderBy,
+      limit: limitClamped,
+      products: rows.map((r) => ({
+        productId: r.productId,
+        name: r.name,
+        totalQuantity: Number(r.totalQuantity),
+        totalRevenue: Math.round(Number(r.totalRevenue) * 100) / 100,
+      })),
+    };
+  }
+
+  async originDistribution(
+    restaurantId: number,
+    period: TrendPeriod = 'last_30d',
+  ): Promise<OriginResponse> {
+    const range = resolveRange(period);
+
+    type RawRow = { origin: string; orders: number; revenue: string };
+    const rows = await this.prisma.$queryRaw<RawRow[]>`
+      SELECT
+        o.origin::text,
+        COUNT(*)::int                      AS orders,
+        COALESCE(SUM(o.total), 0)          AS revenue
+      FROM "Order" o
+      WHERE o."restaurantId" = ${restaurantId}
+        AND o."createdAt"    >= ${range.from}
+        AND o."createdAt"    <= ${range.to}
+        AND o."orderStatus"  != ${OrderStatus.CANCELED}::"OrderStatus"
+      GROUP BY o.origin
+      ORDER BY revenue DESC
+    `;
+
+    const totalRevenue = rows.reduce((s, r) => s + Number(r.revenue), 0);
+
+    return {
+      period,
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      origins: rows.map((r) => ({
+        origin: r.origin,
+        orders: Number(r.orders),
+        revenue: Math.round(Number(r.revenue) * 100) / 100,
+        percentage:
+          totalRevenue > 0
+            ? Math.round((Number(r.revenue) / totalRevenue) * 10000) / 100
+            : 0,
+      })),
     };
   }
 }

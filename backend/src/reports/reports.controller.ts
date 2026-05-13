@@ -138,4 +138,39 @@ export class ReportsController {
 
     return this.trends.revenue(req.user.activeRestaurantId, g, p);
   }
+
+  @Get('trends/products/top')
+  @UseInterceptors(CacheInterceptor)
+  trendsTopProducts(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period?: string,
+    @Query('limit') limit?: string,
+    @Query('orderBy') orderBy?: string,
+  ) {
+    const p = (period ?? 'last_30d') as TrendPeriod;
+    if (!ALL_TREND_PERIODS.includes(p)) {
+      throw new BadRequestException(
+        `period inválido. Use: ${ALL_TREND_PERIODS.join(', ')}`,
+      );
+    }
+    const l = Math.min(Math.max(1, parseInt(limit ?? '10', 10) || 10), 50);
+    const ob: 'revenue' | 'quantity' =
+      orderBy === 'quantity' ? 'quantity' : 'revenue';
+    return this.trends.topProducts(req.user.activeRestaurantId, p, l, ob);
+  }
+
+  @Get('trends/origin')
+  @UseInterceptors(CacheInterceptor)
+  trendsOrigin(
+    @Request() req: AuthenticatedRequest,
+    @Query('period') period?: string,
+  ) {
+    const p = (period ?? 'last_30d') as TrendPeriod;
+    if (!ALL_TREND_PERIODS.includes(p)) {
+      throw new BadRequestException(
+        `period inválido. Use: ${ALL_TREND_PERIODS.join(', ')}`,
+      );
+    }
+    return this.trends.originDistribution(req.user.activeRestaurantId, p);
+  }
 }

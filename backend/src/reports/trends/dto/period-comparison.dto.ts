@@ -38,3 +38,34 @@ export interface RevenueResponse {
     averageDaily: number;
   };
 }
+
+export interface TopProduct {
+  productId: number | null;
+  name: string;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+export interface TopProductsResponse {
+  period: string;
+  from: string;
+  to: string;
+  orderBy: string;
+  limit: number;
+  products: TopProduct[];
+}
+
+export interface OriginDataPoint {
+  origin: string;
+  orders: number;
+  revenue: number;
+  percentage: number;
+}
+
+export interface OriginResponse {
+  period: string;
+  from: string;
+  to: string;
+  totalRevenue: number;
+  origins: OriginDataPoint[];
+}
