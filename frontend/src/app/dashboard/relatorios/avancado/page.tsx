@@ -78,7 +78,7 @@ export default function RelatoriosPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Relatorios" description="Analise vendas, produtos, clientes e horarios." />
+      <PageHeader title="Relatórios Avançados" description="Analise vendas, produtos, clientes e horarios." />
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-40">
