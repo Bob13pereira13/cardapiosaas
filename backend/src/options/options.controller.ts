@@ -2,114 +2,99 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
 import { OptionsService } from './options.service';
-import { CreateOptionGroupDto } from './dto/create-option-group.dto';
-import { UpdateOptionGroupDto } from './dto/update-option-group.dto';
 import { CreateOptionDto } from './dto/create-option.dto';
 import { UpdateOptionDto } from './dto/update-option.dto';
+import { ListOptionsDto } from './dto/list-options.dto';
 
-type AuthReq = { user: { id: number; activeRestaurantId: number } };
+type AuthenticatedRequest = {
+  user: {
+    id: number;
+    accountId: number;
+    activeRestaurantId: number;
+    role: MembershipRole;
+    isPlatformAdmin?: boolean;
+  };
+};
 
-@Controller('products/:productId/option-groups')
+const WRITE_ROLES: MembershipRole[] = [
+  MembershipRole.OWNER,
+  MembershipRole.MANAGER,
+];
+
+function requireWriteRole(req: AuthenticatedRequest): void {
+  if (!req.user.isPlatformAdmin && !WRITE_ROLES.includes(req.user.role)) {
+    throw new ForbiddenException(
+      'Apenas OWNER ou MANAGER podem gerenciar opções.',
+    );
+  }
+}
+
+@Controller('options')
 @UseGuards(AuthGuard('jwt'), RestaurantScopeGuard)
 export class OptionsController {
-  constructor(private svc: OptionsService) {}
+  constructor(private readonly service: OptionsService) {}
 
   @Get()
-  findAll(@Param('productId') pid: string, @Request() req: AuthReq) {
-    return this.svc.findAll(Number(pid), req.user.activeRestaurantId);
+  list(@Query() dto: ListOptionsDto, @Request() req: AuthenticatedRequest) {
+    return this.service.list(req.user.activeRestaurantId, dto);
+  }
+
+  @Get(':id')
+  findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.findOne(id, req.user.activeRestaurantId);
   }
 
   @Post()
-  create(
-    @Param('productId') pid: string,
-    @Request() req: AuthReq,
-    @Body() dto: CreateOptionGroupDto,
-  ) {
-    return this.svc.createGroup(Number(pid), req.user.activeRestaurantId, dto);
+  create(@Body() dto: CreateOptionDto, @Request() req: AuthenticatedRequest) {
+    requireWriteRole(req);
+    return this.service.create(req.user.activeRestaurantId, dto);
   }
 
-  @Patch(':groupId')
-  updateGroup(
-    @Param('productId') pid: string,
-    @Param('groupId') gid: string,
-    @Request() req: AuthReq,
-    @Body() dto: UpdateOptionGroupDto,
-  ) {
-    return this.svc.updateGroup(
-      Number(pid),
-      Number(gid),
-      req.user.activeRestaurantId,
-      dto,
-    );
-  }
-
-  @Delete(':groupId')
-  deleteGroup(
-    @Param('productId') pid: string,
-    @Param('groupId') gid: string,
-    @Request() req: AuthReq,
-  ) {
-    return this.svc.deleteGroup(
-      Number(pid),
-      Number(gid),
-      req.user.activeRestaurantId,
-    );
-  }
-
-  @Post(':groupId/options')
-  addOption(
-    @Param('productId') pid: string,
-    @Param('groupId') gid: string,
-    @Request() req: AuthReq,
-    @Body() dto: CreateOptionDto,
-  ) {
-    return this.svc.addOption(
-      Number(pid),
-      Number(gid),
-      req.user.activeRestaurantId,
-      dto,
-    );
-  }
-
-  @Patch(':groupId/options/:optionId')
-  updateOption(
-    @Param('productId') pid: string,
-    @Param('groupId') gid: string,
-    @Param('optionId') oid: string,
-    @Request() req: AuthReq,
+  @Patch(':id')
+  update(
+    @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateOptionDto,
+    @Request() req: AuthenticatedRequest,
   ) {
-    return this.svc.updateOption(
-      Number(pid),
-      Number(gid),
-      Number(oid),
-      req.user.activeRestaurantId,
-      dto,
-    );
+    requireWriteRole(req);
+    return this.service.update(id, req.user.activeRestaurantId, dto);
   }
 
-  @Delete(':groupId/options/:optionId')
-  deleteOption(
-    @Param('productId') pid: string,
-    @Param('groupId') gid: string,
-    @Param('optionId') oid: string,
-    @Request() req: AuthReq,
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
   ) {
-    return this.svc.deleteOption(
-      Number(pid),
-      Number(gid),
-      Number(oid),
-      req.user.activeRestaurantId,
-    );
+    requireWriteRole(req);
+    return this.service.softDelete(id, req.user.activeRestaurantId);
+  }
+
+  @Patch(':id/stock-status')
+  @HttpCode(HttpStatus.OK)
+  toggleStockStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.service.toggleStockStatus(id, req.user.activeRestaurantId);
   }
 }

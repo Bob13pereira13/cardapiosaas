@@ -1,125 +1,233 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, OptionStockStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateOptionGroupDto } from './dto/create-option-group.dto';
-import { UpdateOptionGroupDto } from './dto/update-option-group.dto';
 import { CreateOptionDto } from './dto/create-option.dto';
 import { UpdateOptionDto } from './dto/update-option.dto';
+import { ListOptionsDto } from './dto/list-options.dto';
+import {
+  OptionResponseDto,
+  PaginatedOptionsResponse,
+} from './dto/option-response.dto';
 
 @Injectable()
 export class OptionsService {
   constructor(private prisma: PrismaService) {}
 
-  private async verifyProduct(productId: number, restaurantId: number) {
-    const product = await this.prisma.product.findFirst({
-      where: { id: productId, restaurantId },
+  async list(
+    restaurantId: number,
+    dto: ListOptionsDto,
+  ): Promise<PaginatedOptionsResponse> {
+    const { page = 1, limit = 20, search, isActive, stockStatus, includeUsage } = dto;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.OptionWhereInput = {
+      restaurantId,
+      deletedAt: null,
+      ...(search && { name: { contains: search, mode: 'insensitive' } }),
+      ...(isActive !== undefined && { isActive }),
+      ...(stockStatus && { stockStatus }),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.option.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip,
+        take: limit,
+        include: includeUsage
+          ? {
+              complementOptions: {
+                where: { complement: { deletedAt: null } },
+                include: { complement: { select: { id: true, name: true } } },
+              },
+            }
+          : undefined,
+      }),
+      this.prisma.option.count({ where }),
+    ]);
+
+    const data: OptionResponseDto[] = items.map((opt) => {
+      const base: OptionResponseDto = {
+        id: opt.id,
+        restaurantId: opt.restaurantId,
+        name: opt.name,
+        description: opt.description,
+        imageUrl: opt.imageUrl,
+        codePdv: opt.codePdv,
+        costPrice: opt.costPrice,
+        useTechSheet: opt.useTechSheet,
+        stockStatus: opt.stockStatus,
+        isActive: opt.isActive,
+        createdAt: opt.createdAt,
+        updatedAt: opt.updatedAt,
+      };
+
+      if (!includeUsage) return base;
+
+      const co = (opt as typeof opt & {
+        complementOptions: Array<{ complement: { id: number; name: string } }>;
+      }).complementOptions;
+
+      return {
+        ...base,
+        usedInComplements: co.length,
+        complementsUsing: co.map((c) => c.complement),
+      };
     });
-    if (!product) throw new NotFoundException('Produto não encontrado.');
-    return product;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
-  private async verifyGroup(
-    productId: number,
-    groupId: number,
-    restaurantId: number,
-  ) {
-    await this.verifyProduct(productId, restaurantId);
-    const group = await this.prisma.optionGroup.findFirst({
-      where: {
-        id: groupId,
-        restaurantId,
-        productLinks: { some: { productId } },
+  async findOne(id: number, restaurantId: number): Promise<OptionResponseDto> {
+    const opt = await this.prisma.option.findFirst({
+      where: { id, restaurantId, deletedAt: null },
+      include: {
+        complementOptions: {
+          where: { complement: { deletedAt: null } },
+          include: { complement: { select: { id: true, name: true } } },
+        },
       },
     });
-    if (!group) throw new NotFoundException('Grupo de opções não encontrado.');
-    return group;
+    if (!opt) throw new NotFoundException('Opção não encontrada.');
+
+    return {
+      id: opt.id,
+      restaurantId: opt.restaurantId,
+      name: opt.name,
+      description: opt.description,
+      imageUrl: opt.imageUrl,
+      codePdv: opt.codePdv,
+      costPrice: opt.costPrice,
+      useTechSheet: opt.useTechSheet,
+      stockStatus: opt.stockStatus,
+      isActive: opt.isActive,
+      createdAt: opt.createdAt,
+      updatedAt: opt.updatedAt,
+      usedInComplements: opt.complementOptions.length,
+      complementsUsing: opt.complementOptions.map((co) => co.complement),
+    };
   }
 
-  findAll(productId: number, restaurantId: number) {
-    return this.prisma.optionGroup.findMany({
-      where: {
-        restaurantId,
-        productLinks: { some: { productId } },
-      },
-      include: { options: { orderBy: { displayOrder: 'asc' } } },
-      orderBy: { displayOrder: 'asc' },
-    });
-  }
-
-  async createGroup(
-    productId: number,
-    restaurantId: number,
-    dto: CreateOptionGroupDto,
-  ) {
-    await this.verifyProduct(productId, restaurantId);
-    return this.prisma.optionGroup.create({
-      data: {
-        restaurantId,
-        ...dto,
-        productLinks: { create: { productId, ordem: dto.displayOrder ?? 0 } },
-      },
-      include: { options: true },
-    });
-  }
-
-  async updateGroup(
-    productId: number,
-    groupId: number,
-    restaurantId: number,
-    dto: UpdateOptionGroupDto,
-  ) {
-    await this.verifyGroup(productId, groupId, restaurantId);
-    return this.prisma.optionGroup.update({
-      where: { id: groupId },
-      data: dto,
-      include: { options: true },
-    });
-  }
-
-  async deleteGroup(productId: number, groupId: number, restaurantId: number) {
-    await this.verifyGroup(productId, groupId, restaurantId);
-    await this.prisma.optionGroup.delete({ where: { id: groupId } });
-    return { ok: true };
-  }
-
-  async addOption(
-    productId: number,
-    groupId: number,
+  async create(
     restaurantId: number,
     dto: CreateOptionDto,
-  ) {
-    await this.verifyGroup(productId, groupId, restaurantId);
-    return this.prisma.option.create({
-      data: { optionGroupId: groupId, ...dto },
-    });
+  ): Promise<OptionResponseDto> {
+    try {
+      const opt = await this.prisma.option.create({
+        data: {
+          restaurantId,
+          name: dto.name,
+          description: dto.description,
+          imageUrl: dto.imageUrl,
+          codePdv: dto.codePdv,
+          costPrice: dto.costPrice,
+          useTechSheet: dto.useTechSheet ?? false,
+          stockStatus: dto.stockStatus ?? OptionStockStatus.ACTIVE,
+          isActive: dto.isActive ?? true,
+        },
+      });
+      return this.findOne(opt.id, restaurantId);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `Já existe uma opção ativa com o nome "${dto.name}".`,
+        );
+      }
+      throw err;
+    }
   }
 
-  async updateOption(
-    productId: number,
-    groupId: number,
-    optionId: number,
+  async update(
+    id: number,
     restaurantId: number,
     dto: UpdateOptionDto,
-  ) {
-    await this.verifyGroup(productId, groupId, restaurantId);
-    const opt = await this.prisma.option.findFirst({
-      where: { id: optionId, optionGroupId: groupId },
-    });
-    if (!opt) throw new NotFoundException('Opção não encontrada.');
-    return this.prisma.option.update({ where: { id: optionId }, data: dto });
+  ): Promise<OptionResponseDto> {
+    await this.findOne(id, restaurantId);
+
+    try {
+      await this.prisma.option.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.description !== undefined && { description: dto.description }),
+          ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+          ...(dto.codePdv !== undefined && { codePdv: dto.codePdv }),
+          ...(dto.costPrice !== undefined && { costPrice: dto.costPrice }),
+          ...(dto.useTechSheet !== undefined && { useTechSheet: dto.useTechSheet }),
+          ...(dto.stockStatus !== undefined && { stockStatus: dto.stockStatus }),
+          ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `Já existe uma opção ativa com o nome "${dto.name}".`,
+        );
+      }
+      throw err;
+    }
+
+    return this.findOne(id, restaurantId);
   }
 
-  async deleteOption(
-    productId: number,
-    groupId: number,
-    optionId: number,
-    restaurantId: number,
-  ) {
-    await this.verifyGroup(productId, groupId, restaurantId);
+  async softDelete(id: number, restaurantId: number): Promise<{ ok: boolean }> {
     const opt = await this.prisma.option.findFirst({
-      where: { id: optionId, optionGroupId: groupId },
+      where: { id, restaurantId, deletedAt: null },
+      include: {
+        complementOptions: {
+          where: { complement: { deletedAt: null } },
+        },
+      },
     });
     if (!opt) throw new NotFoundException('Opção não encontrada.');
-    await this.prisma.option.delete({ where: { id: optionId } });
+
+    if (opt.complementOptions.length > 0) {
+      throw new BadRequestException(
+        `Opção em uso por ${opt.complementOptions.length} complemento(s). Remova o vínculo antes de excluir.`,
+      );
+    }
+
+    await this.prisma.option.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
     return { ok: true };
+  }
+
+  async toggleStockStatus(
+    id: number,
+    restaurantId: number,
+  ): Promise<OptionResponseDto> {
+    const opt = await this.prisma.option.findFirst({
+      where: { id, restaurantId, deletedAt: null },
+    });
+    if (!opt) throw new NotFoundException('Opção não encontrada.');
+
+    const next =
+      opt.stockStatus === OptionStockStatus.ACTIVE
+        ? OptionStockStatus.OUT_OF_STOCK
+        : OptionStockStatus.ACTIVE;
+
+    await this.prisma.option.update({ where: { id }, data: { stockStatus: next } });
+
+    return this.findOne(id, restaurantId);
   }
 }
