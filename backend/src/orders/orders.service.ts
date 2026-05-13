@@ -522,6 +522,12 @@ export class OrdersService {
             });
           }
 
+          const dtoOrigin = dto.origin ?? OrderOrigin.WEBSITE;
+          const finalOrigin =
+            dtoOrigin === OrderOrigin.WEBSITE && dto.tableId != null
+              ? OrderOrigin.MESA
+              : dtoOrigin;
+
           const order = await tx.order.create({
             data: {
               restaurantId: restaurant.id,
@@ -542,6 +548,7 @@ export class OrdersService {
               subtotal: finalSubtotal,
               discountAmount,
               total,
+              origin: finalOrigin,
               tabId: tab.id,
               couponId,
               couponCode: dto.couponCode?.toUpperCase(),
