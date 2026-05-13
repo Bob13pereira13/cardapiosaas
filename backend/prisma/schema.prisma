@@ -39,19 +39,6 @@ enum CouponType {
   FREE_DELIVERY
 }
 
-enum OptionPriceMode {
-  SUM
-  HIGHEST
-  FIXED_TOTAL
-}
-
-enum OptionGroupTipo {
-  COMPLEMENTO
-  OPCAO
-  ADICIONAL
-  VARIACAO
-}
-
 enum TabStatus {
   OPEN
   CLOSED
@@ -197,23 +184,90 @@ enum MessageStatus {
   CONVERTED
 }
 
+// ─── CATÁLOGO PROFISSIONAL ────────────────────────────────────
+
+enum OptionStockStatus {
+  ACTIVE
+  OUT_OF_STOCK
+  HIDDEN
+}
+
+enum ComplementSelectionRule {
+  SINGLE
+  MULTI_NO_REPEAT
+  MULTI_REPEAT
+}
+
+enum ComplementLink {
+  DELIVERY
+  BALCAO
+  MESA_PUBLIC
+  MESA_INTERNAL
+  PREVIEW
+}
+
+enum ComplementVisibility {
+  VISIBLE
+  HIDDEN
+}
+
+enum ProductUnit {
+  UNIT
+  KG
+  GRAM
+  LITER
+  ML
+  PORTION
+}
+
+enum ProductOrderType {
+  DELIVERY
+  PICKUP
+  DINE_IN
+}
+
+enum ProductLink {
+  DELIVERY
+  MESA_PUBLIC
+  MESA_INTERNAL
+  BALCAO
+  PREVIEW
+}
+
+enum ProductLabel {
+  HIGHLIGHT
+  RECOMMENDED
+  NEW
+  LIMITED_EDITION
+}
+
+enum ComplementPriceMode {
+  SUM_OF_SELECTED
+  AVERAGE_OF_SELECTED
+  HIGHEST_SELECTED
+  LOWEST_SELECTED
+}
+
 // ─── MODELOS ─────────────────────────────────────────────────────
 
 model Category {
-  id           Int        @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   nome         String
-  displayOrder Int        @default(0)
-  ativa        Boolean    @default(true)
+  displayOrder Int       @default(0)
+  ativa        Boolean   @default(true)
   icone        String?
+  deletedAt    DateTime? @db.Timestamptz(3)
 
   restaurantId Int
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  products     Product[]
+  products Product[]
 }
 
 model Product {
   id               Int     @id @default(autoincrement())
+
+  // ── campos existentes PT (mantidos) ──
   nome             String
   descricao        String?
   preco            Float
@@ -231,68 +285,146 @@ model Product {
   disponibilidadeInicio String?
   disponibilidadeFim    String?
 
+  // ── promoção avançada (novos) ──
+  isPromotional Boolean   @default(false)
+  promoStartsAt DateTime?
+  promoEndsAt   DateTime?
+  /// Formato: { mon: [{start: "HH:MM", end: "HH:MM"}, ...], tue: [...], ... }
+  /// Dias da semana com faixas horárias quando promoção está ativa
+  promoSchedule Json?
+
+  // ── custo (novos) ──
+  costPrice    Decimal? @db.Decimal(10, 2)
+  useTechSheet Boolean  @default(false)
+
+  // ── identificação (novos) ──
+  codePdv      String?
+  internalCode String? @unique
+
+  // ── apresentação (novo — emDestaque mantido, isHighlighted não entra) ──
+  labelType ProductLabel?
+
+  // ── operacional (novos) ──
+  unitOfMeasure    ProductUnit @default(UNIT)
+  useCustomNameKds Boolean     @default(false)
+  customNameKds    String?
+  hideObservations Boolean     @default(false)
+  hideQtyButtons   Boolean     @default(false)
+  isNew            Boolean     @default(false)
+  isAdult          Boolean     @default(false)
+  isServiceFeeFree Boolean     @default(false)
+
+  // ── disponibilidade (novos) ──
+  orderTypes     ProductOrderType[] @default([])
+  availableLinks ProductLink[]      @default([])
+
+  // ── soft delete (novo) ──
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  // ── FKs (existentes) ──
   restaurantId Int
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   categoryId Int?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  productionSectorId Int?
-  productionSector   ProductionSector? @relation(fields: [productionSectorId], references: [id])
-
-  optionGroups       ProductComplement[]
+  // ── relações (mantidas + novas) ──
   orderItems         OrderItem[]
   comboItems         ComboItem[]
   availabilities     ProductAvailability[]
+  printAreas         ProductPrintArea[]
+  productComplements ProductComplement[]
 
-  @@index([productionSectorId])
-}
-
-model OptionGroup {
-  id            Int             @id @default(autoincrement())
-  restaurantId  Int
-  restaurant    Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  nome          String
-  descricao     String?
-  tipo          OptionGroupTipo @default(ADICIONAL)
-  minSelections Int             @default(0)
-  maxSelections Int             @default(1)
-  priceMode     OptionPriceMode @default(SUM)
-  required      Boolean         @default(false)
-  ativo         Boolean         @default(true)
-  displayOrder  Int             @default(0)
-  productLinks  ProductComplement[]
-  options       Option[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  @@index([restaurantId, ativo])
+  @@index([restaurantId, disponivel, deletedAt])
 }
 
 model Option {
-  id            Int         @id @default(autoincrement())
-  optionGroupId Int
-  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
-  nome          String
-  descricao     String?
-  priceModifier Float       @default(0)
-  imagem        String?
-  available     Boolean     @default(true)
-  estoque       Int?
-  displayOrder  Int         @default(0)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id           Int               @id @default(autoincrement())
+  restaurantId Int
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?           @db.Text
+  imageUrl     String?
+  codePdv      String?
+  costPrice    Decimal?          @db.Decimal(10, 2)
+  useTechSheet Boolean           @default(false)
+  stockStatus  OptionStockStatus @default(ACTIVE)
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?         @db.Timestamptz(3)
+
+  complementOptions    ComplementOption[]
+  orderItemOptionSnaps OrderItemOption[]
+
+  @@index([restaurantId, isActive, deletedAt])
+  @@index([restaurantId, name])
+}
+
+model Complement {
+  id             Int                     @id @default(autoincrement())
+  restaurantId   Int
+  restaurant     Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?                 @db.Text
+  selectionRule  ComplementSelectionRule
+  priceMode      ComplementPriceMode     @default(SUM_OF_SELECTED)
+  /// Required = minSelections > 0. Service valida coerência.
+  minSelections  Int                     @default(0)
+  maxSelections  Int                     @default(1)
+  availableLinks ComplementLink[]
+  visibility     ComplementVisibility    @default(VISIBLE)
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  deletedAt      DateTime?               @db.Timestamptz(3)
+
+  complementOptions  ComplementOption[]
+  productComplements ProductComplement[]
+  orderItemSnapshots OrderItemComplement[]
+
+  @@index([restaurantId, isActive, deletedAt])
+  @@index([restaurantId, name])
+}
+
+model ComplementOption {
+  id           Int        @id @default(autoincrement())
+  complementId Int
+  complement   Complement @relation(fields: [complementId], references: [id], onDelete: Cascade)
+  optionId     Int
+  option       Option     @relation(fields: [optionId], references: [id], onDelete: Restrict)
+  extraPrice   Decimal    @default(0) @db.Decimal(10, 2)
+  isLocked     Boolean    @default(false)
+  isVisible    Boolean    @default(true)
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([complementId, optionId])
+  @@index([complementId, sortOrder])
 }
 
 model ProductComplement {
-  productId     Int
-  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  optionGroupId Int
-  optionGroup   OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
-  ordem         Int         @default(0)
+  id           Int        @id @default(autoincrement())
+  productId    Int
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  complementId Int
+  complement   Complement @relation(fields: [complementId], references: [id], onDelete: Restrict)
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
 
-  @@id([productId, optionGroupId])
-  @@index([optionGroupId])
+  @@unique([productId, complementId])
+  @@index([productId, sortOrder])
+}
+
+model ProductPrintArea {
+  id                 Int              @id @default(autoincrement())
+  productId          Int
+  product            Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productionSectorId Int
+  productionSector   ProductionSector @relation(fields: [productionSectorId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, productionSectorId])
 }
 
 model ProductAvailability {
@@ -320,18 +452,18 @@ model Order {
   customerPhone   String
   customerAddress Json?
 
-  deliveryType   DeliveryType  @default(DELIVERY)
-  deliveryFee    Float         @default(0)
+  deliveryType   DeliveryType @default(DELIVERY)
+  deliveryFee    Float        @default(0)
   subtotal       Float
-  discountAmount Float         @default(0)
+  discountAmount Float        @default(0)
   total          Float
 
-  orderStatus   OrderStatus   @default(PENDING)
+  orderStatus OrderStatus @default(PENDING)
 
-  notes       String?
-  couponId    Int?
-  coupon      Coupon?  @relation(fields: [couponId], references: [id])
-  couponCode  String?
+  notes      String?
+  couponId   Int?
+  coupon     Coupon?  @relation(fields: [couponId], references: [id])
+  couponCode String?
 
   origin          OrderOrigin @default(WEBSITE)
   externalOrderId String?
@@ -340,16 +472,16 @@ model Order {
   marketplaceIntegrationId Int?
   marketplaceIntegration   MarketplaceIntegration? @relation(fields: [marketplaceIntegrationId], references: [id], onDelete: SetNull)
 
-  tabId   Int?
-  tab     Tab? @relation(fields: [tabId], references: [id])
+  tabId Int?
+  tab   Tab? @relation(fields: [tabId], references: [id])
 
   items            OrderItem[]
   history          OrderStatusHistory[]
   deliveryAttempts DeliveryAttempt[]
   campaignMessages CampaignMessage[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   confirmedAt DateTime?
   deliveredAt DateTime?
   canceledAt  DateTime?
@@ -385,13 +517,13 @@ model Customer {
   totalSpent   Decimal   @default(0) @db.Decimal(10, 2)
   firstOrderAt DateTime?
 
-  orders       Order[]
-  tabs         Tab[]
+  orders Order[]
+  tabs   Tab[]
 
-  auth          CustomerAuth?
-  loyaltyPoints LoyaltyPoints[]
-  loyaltyTx     LoyaltyTransaction[]
-  npsResponses  NpsResponse[]
+  auth              CustomerAuth?
+  loyaltyPoints     LoyaltyPoints[]
+  loyaltyTx         LoyaltyTransaction[]
+  npsResponses      NpsResponse[]
   fiadoTransactions FiadoTransaction[]
   campaignMessages  CampaignMessage[]
 
@@ -413,13 +545,43 @@ model OrderItem {
   productPriceSnapshot Float
   quantity             Int
   unitPrice            Float
-  selectedOptions      Json?
   itemNotes            String?
   itemTotal            Float
 
-  precoOriginal        Float?
-  appliedPromotionId   Int?
-  appliedPromotion     PromotionalSchedule? @relation(fields: [appliedPromotionId], references: [id], onDelete: SetNull)
+  precoOriginal      Float?
+  appliedPromotionId Int?
+  appliedPromotion   PromotionalSchedule? @relation(fields: [appliedPromotionId], references: [id], onDelete: SetNull)
+
+  selectedComplements OrderItemComplement[]
+}
+
+model OrderItemComplement {
+  id                     Int                     @id @default(autoincrement())
+  orderItemId            Int
+  orderItem              OrderItem               @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  complementId           Int?
+  complement             Complement?             @relation(fields: [complementId], references: [id], onDelete: SetNull)
+  complementNameSnapshot String
+  selectionRuleSnapshot  ComplementSelectionRule
+  createdAt              DateTime                @default(now())
+
+  selectedOptions OrderItemOption[]
+
+  @@index([orderItemId])
+}
+
+model OrderItemOption {
+  id                    Int                 @id @default(autoincrement())
+  orderItemComplementId Int
+  orderItemComplement   OrderItemComplement @relation(fields: [orderItemComplementId], references: [id], onDelete: Cascade)
+  optionId              Int?
+  option                Option?             @relation(fields: [optionId], references: [id], onDelete: SetNull)
+  optionNameSnapshot    String
+  optionPriceSnapshot   Decimal             @db.Decimal(10, 2)
+  quantity              Int                 @default(1)
+  createdAt             DateTime            @default(now())
+
+  @@index([orderItemComplementId])
 }
 
 model OrderStatusHistory {
@@ -558,16 +720,16 @@ model ComboItem {
 }
 
 model AuditLog {
-  id           Int        @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   accountId    Int?
-  account      Account?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  account      Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   restaurantId Int
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   action       String
   entity       String
   entityId     Int?
   meta         Json?
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime @default(now())
 
   @@index([restaurantId, createdAt])
 }
@@ -598,12 +760,12 @@ model Account {
   auditLogs        AuditLog[]
   openedSessions   CashRegisterSession[] @relation("OpenedSessions")
   closedSessions   CashRegisterSession[] @relation("ClosedSessions")
-  cashMovements    CashMovement[]
+  cashMovements     CashMovement[]
   fiadoTransactions FiadoTransaction[]
   audiencesCreated  Audience[]  @relation("AudienceCreator")
   campaignsCreated  Campaign[]  @relation("CampaignCreator")
   createdAt         DateTime    @default(now())
-  updatedAt        DateTime     @updatedAt
+  updatedAt         DateTime    @updatedAt
 }
 
 model Restaurant {
@@ -704,23 +866,24 @@ model Restaurant {
   categories        Category[]
   products          Product[]
   productionSectors ProductionSector[]
-  promotions       PromotionalSchedule[]
-  optionGroups     OptionGroup[]
-  orders           Order[]
-  coupons          Coupon[]
-  customers        Customer[]
-  customerAuths    CustomerAuth[]
-  tables           Table[]
-  combos           Combo[]
-  auditLogs        AuditLog[]
-  loyaltyPoints    LoyaltyPoints[]
-  loyaltyTx        LoyaltyTransaction[]
-  npsResponses     NpsResponse[]
-  cartAbandonments CartAbandonment[]
+  promotions        PromotionalSchedule[]
+  options           Option[]
+  complements       Complement[]
+  orders            Order[]
+  coupons           Coupon[]
+  customers         Customer[]
+  customerAuths     CustomerAuth[]
+  tables            Table[]
+  combos            Combo[]
+  auditLogs         AuditLog[]
+  loyaltyPoints     LoyaltyPoints[]
+  loyaltyTx         LoyaltyTransaction[]
+  npsResponses      NpsResponse[]
+  cartAbandonments  CartAbandonment[]
 
-  tabs         Tab[]
-  tabPayments  Payment[]
-  memberships  Membership[]
+  tabs        Tab[]
+  tabPayments Payment[]
+  memberships Membership[]
 
   deliveryZones           DeliveryZone[]
   deliveryAttempts        DeliveryAttempt[]
@@ -732,8 +895,8 @@ model Restaurant {
   campaigns               Campaign[]
   triggerSubscriptions    TriggerSubscription[]
 
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([customDomain])
@@ -751,7 +914,7 @@ model ProductionSector {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  products     Product[]
+  printAreas ProductPrintArea[]
 
   @@unique([restaurantId, nome])
   @@index([restaurantId, ativo])
@@ -763,26 +926,22 @@ model PromotionalSchedule {
   restaurantId Int
   restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  nome         String
-  descricao    String?
-
-  productIds   Int[]             @default([])
-  categoryIds  Int[]             @default([])
-
-  tipoDesconto PromoDiscountType
+  nome          String
+  descricao     String?
+  productIds    Int[]             @default([])
+  categoryIds   Int[]             @default([])
+  tipoDesconto  PromoDiscountType
   valorDesconto Float
+  validoDe      DateTime?
+  validoAte     DateTime?
+  diasSemana    Int[]             @default([])
+  horaInicio    String?
+  horaFim       String?
+  ativo         Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
-  validoDe     DateTime?
-  validoAte    DateTime?
-  diasSemana   Int[]             @default([])
-  horaInicio   String?
-  horaFim      String?
-
-  ativo        Boolean           @default(true)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-
-  appliedTo    OrderItem[]
+  appliedTo OrderItem[]
 
   @@index([restaurantId, ativo])
 }
@@ -898,7 +1057,6 @@ model DeliveryZone {
   tipo         ZoneType
 
   bairros   String[] @default([])
-
   centerLat Float?
   centerLng Float?
   radiusKm  Float?
@@ -906,8 +1064,7 @@ model DeliveryZone {
   fretefixo        Decimal @db.Decimal(10, 2)
   tempoEstimadoMin Int
   prioridade       Int     @default(0)
-
-  isActive Boolean @default(true)
+  isActive         Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1025,10 +1182,10 @@ model CashMovement {
   createdByAccountId Int
   createdBy          Account @relation(fields: [createdByAccountId], references: [id], onDelete: Restrict)
 
-  tipo      CashMovementType
-  origem    CashMovementOrigin
-  valor     Decimal            @db.Decimal(10, 2)
-  descricao String?
+  tipo       CashMovementType
+  origem     CashMovementOrigin
+  valor      Decimal            @db.Decimal(10, 2)
+  descricao  String?
   observacao String?
 
   createdAt DateTime @default(now())
@@ -1174,13 +1331,13 @@ model CampaignMessage {
   dispatch   CampaignDispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
 
   customerId Int
-  customer   Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   couponId Int?
-  coupon   Coupon?  @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
 
   orderId Int?
-  order   Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order   Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
   status       MessageStatus @default(PENDING)
   phone        String
