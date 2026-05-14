@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
+import { DEFAULT_PRODUCT_ORDER_TYPES, DEFAULT_PRODUCT_AVAILABLE_LINKS } from '@/lib/product-defaults'
 import { PageHeader } from '@/components/admin/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -96,6 +97,10 @@ export default function NovoProdutoPage() {
           disponibilidadeInicio: disponibilidadeAtiva && disponibilidadeInicio ? disponibilidadeInicio : undefined,
           disponibilidadeFim: disponibilidadeAtiva && disponibilidadeFim ? disponibilidadeFim : undefined,
           disponibilidadeDias: disponibilidadeAtiva ? disponibilidadeDias : undefined,
+          // FIX TEMPORÁRIO: campos required no backend (Fase 1A.4)
+          // Remove na Fase 4B quando UI tiver campos explícitos
+          orderTypes: DEFAULT_PRODUCT_ORDER_TYPES,
+          availableLinks: DEFAULT_PRODUCT_AVAILABLE_LINKS,
         }),
       })
       if (handleUnauthorized(res)) return

@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { toast, Toaster } from 'sonner'
 import { API_URL } from '@/lib/config'
 import { getToken, handleUnauthorized } from '@/lib/auth'
+import { DEFAULT_PRODUCT_ORDER_TYPES, DEFAULT_PRODUCT_AVAILABLE_LINKS, ProductOrderType, ProductLink } from '@/lib/product-defaults'
 import { PageHeader } from '@/components/admin/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +33,8 @@ type Product = {
   categoryId?: number
   imageUrl?: string
   imagem?: string
+  orderTypes?: ProductOrderType[]
+  availableLinks?: ProductLink[]
 }
 
 export default function EditarProdutoPage() {
@@ -55,6 +58,8 @@ export default function EditarProdutoPage() {
   const [disponibilidadeInicio, setDisponibilidadeInicio] = useState('')
   const [disponibilidadeFim, setDisponibilidadeFim] = useState('')
   const [disponibilidadeDias, setDisponibilidadeDias] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
+  const [existingOrderTypes, setExistingOrderTypes] = useState<ProductOrderType[]>([])
+  const [existingAvailableLinks, setExistingAvailableLinks] = useState<ProductLink[]>([])
   const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -92,6 +97,8 @@ export default function EditarProdutoPage() {
         setEstoqueAtivo(Boolean(product.estoqueAtivo))
         setEstoque(String(product.estoque ?? 0))
         setImagem(product.imageUrl ?? product.imagem ?? '')
+        if (product.orderTypes?.length) setExistingOrderTypes(product.orderTypes)
+        if (product.availableLinks?.length) setExistingAvailableLinks(product.availableLinks)
         if ((product as any).disponibilidadeAtiva) setDisponibilidadeAtiva(true)
         if ((product as any).disponibilidadeInicio) setDisponibilidadeInicio((product as any).disponibilidadeInicio)
         if ((product as any).disponibilidadeFim) setDisponibilidadeFim((product as any).disponibilidadeFim)
@@ -146,6 +153,11 @@ export default function EditarProdutoPage() {
           disponibilidadeInicio: disponibilidadeAtiva && disponibilidadeInicio ? disponibilidadeInicio : null,
           disponibilidadeFim: disponibilidadeAtiva && disponibilidadeFim ? disponibilidadeFim : null,
           disponibilidadeDias: disponibilidadeAtiva ? disponibilidadeDias : [0, 1, 2, 3, 4, 5, 6],
+          // FIX TEMPORÁRIO: campos required no backend (Fase 1A.4)
+          // Respeita valores existentes; aplica default se produto ainda não os tem
+          // Remove na Fase 4B quando UI tiver campos explícitos
+          orderTypes: existingOrderTypes.length > 0 ? existingOrderTypes : DEFAULT_PRODUCT_ORDER_TYPES,
+          availableLinks: existingAvailableLinks.length > 0 ? existingAvailableLinks : DEFAULT_PRODUCT_AVAILABLE_LINKS,
         }),
       })
       if (handleUnauthorized(res)) return
