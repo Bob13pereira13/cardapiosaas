@@ -93,6 +93,9 @@ export function ImageUploader({
   return (
     <div className="space-y-1.5">
       <div
+        role={!hasContent ? 'button' : undefined}
+        tabIndex={!hasContent && !disabled && !uploading ? 0 : undefined}
+        aria-label={!hasContent ? 'Arraste uma imagem ou clique para selecionar' : undefined}
         className={[
           'group relative h-44 w-full overflow-hidden rounded-lg border-2 transition-colors',
           hasContent
@@ -107,6 +110,12 @@ export function ImageUploader({
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => !hasContent && !disabled && !uploading && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (!hasContent && !disabled && !uploading && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            inputRef.current?.click()
+          }
+        }}
       >
         {/* Empty state */}
         {!hasContent && (
@@ -145,9 +154,9 @@ export function ImageUploader({
           </div>
         )}
 
-        {/* Hover action buttons */}
+        {/* Hover action buttons (with saved image) */}
         {hasContent && !uploading && !disabled && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute right-2 top-2 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); openPicker() }}
@@ -171,9 +180,9 @@ export function ImageUploader({
           </div>
         )}
 
-        {/* Clear pending file button (no saved image) */}
+        {/* Swap button (pending file, no saved image) */}
         {hasContent && !value && !uploading && !disabled && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute right-2 top-2 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); openPicker() }}

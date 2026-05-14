@@ -57,7 +57,7 @@ export function ConfirmDeleteDialog({ option, onClose, onDeleted }: ConfirmDelet
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleting} autoFocus>Cancelar</AlertDialogCancel>
           <Button
             variant="destructive"
             disabled={deleting}

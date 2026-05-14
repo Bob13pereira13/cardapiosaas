@@ -1,6 +1,7 @@
 'use client'
 
-import { ImageIcon, MoreVertical } from 'lucide-react'
+import { useState } from 'react'
+import { ImageIcon, Loader2, MoreVertical } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,7 @@ interface Props {
   option: OptionDto
   onEdit: (id: number) => void
   onDelete: (option: OptionDto) => void
-  onToggleStock: (id: number, current: OptionStockStatus) => void
+  onToggleStock: (id: number, current: OptionStockStatus) => Promise<void> | void
 }
 
 const STATUS_CONFIG: Record<
@@ -28,22 +29,42 @@ const STATUS_CONFIG: Record<
 export function OpcaoCard({ option, onEdit, onDelete, onToggleStock }: Props) {
   const status = option.isActive ? option.stockStatus : 'HIDDEN'
   const { label, className } = STATUS_CONFIG[status]
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const [toggling, setToggling] = useState(false)
 
   const usageLabel =
     option.usedInComplements && option.usedInComplements > 0
       ? `Usado em ${option.usedInComplements} complemento${option.usedInComplements > 1 ? 's' : ''}`
       : 'Não usado em nenhum complemento'
 
+  async function handleToggleStock() {
+    if (toggling) return
+    setToggling(true)
+    try {
+      await onToggleStock(option.id, option.stockStatus)
+    } finally {
+      setToggling(false)
+    }
+  }
+
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       {/* Image */}
       <div className="relative aspect-square w-full overflow-hidden bg-gray-100">
         {option.imageUrl ? (
-          <img
-            src={option.imageUrl}
-            alt={option.name}
-            className="h-full w-full object-cover"
-          />
+          <>
+            {!imageLoaded && (
+              <div className="absolute inset-0 animate-pulse bg-gray-200" />
+            )}
+            <img
+              src={option.imageUrl}
+              alt={option.name}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setImageLoaded(true)}
+              className={`h-full w-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            />
+          </>
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <ImageIcon className="h-10 w-10 text-gray-300" />
@@ -60,14 +81,18 @@ export function OpcaoCard({ option, onEdit, onDelete, onToggleStock }: Props) {
             <DropdownMenuTrigger asChild>
               <button
                 className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Opções"
+                aria-label={`Opções de ${option.name}`}
               >
-                <MoreVertical className="h-4 w-4" />
+                {toggling ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MoreVertical className="h-4 w-4" />
+                )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onEdit(option.id)}>Editar</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onToggleStock(option.id, option.stockStatus)}>
+              <DropdownMenuItem disabled={toggling} onClick={handleToggleStock}>
                 {option.stockStatus === 'ACTIVE' ? 'Marcar em falta' : 'Marcar disponível'}
               </DropdownMenuItem>
               <DropdownMenuItem

@@ -12,6 +12,7 @@ import { OpcaoCard } from '../components/OpcaoCard'
 import { OpcoesEmpty } from '../components/OpcoesEmpty'
 import { OpcaoFormModal } from '../components/OpcaoFormModal'
 import { ConfirmDeleteDialog } from '../components/ConfirmDeleteDialog'
+import { CatalogoErrorBoundary } from '../components/CatalogoErrorBoundary'
 
 export default function OpcoesPage() {
   const [searchInput, setSearchInput] = useState('')
@@ -105,17 +106,19 @@ export default function OpcoesPage() {
 
       {/* Grid */}
       {!loading && !error && data.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((option) => (
-            <OpcaoCard
-              key={option.id}
-              option={option}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onToggleStock={handleToggleStock}
-            />
-          ))}
-        </div>
+        <CatalogoErrorBoundary>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {data.map((option) => (
+              <OpcaoCard
+                key={option.id}
+                option={option}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onToggleStock={handleToggleStock}
+              />
+            ))}
+          </div>
+        </CatalogoErrorBoundary>
       )}
 
       <OpcaoFormModal

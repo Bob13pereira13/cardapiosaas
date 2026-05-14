@@ -220,7 +220,7 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="w-full max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -251,8 +251,11 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
               </Label>
               <Input
                 id="opcao-name"
+                autoFocus
+                autoComplete="off"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                aria-describedby={fieldErrors.name ? 'opcao-name-error' : undefined}
                 className={
                   fieldErrors.name
                     ? 'border-red-400 focus-visible:ring-red-400'
@@ -260,7 +263,11 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
                 }
                 disabled={submitting}
               />
-              {fieldErrors.name && <p className="text-xs text-red-500">{fieldErrors.name}</p>}
+              {fieldErrors.name && (
+                <p id="opcao-name-error" role="alert" className="text-xs text-red-500">
+                  {fieldErrors.name}
+                </p>
+              )}
             </div>
 
             {/* Código PDV */}
@@ -268,6 +275,7 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
               <Label htmlFor="opcao-pdv">Código PDV</Label>
               <Input
                 id="opcao-pdv"
+                autoComplete="off"
                 value={form.codePdv}
                 onChange={(e) => setForm((f) => ({ ...f, codePdv: e.target.value }))}
                 className="focus-visible:ring-brand-red"
@@ -283,8 +291,10 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
                 type="number"
                 step="0.01"
                 min="0"
+                autoComplete="off"
                 value={form.costPrice}
                 onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value }))}
+                aria-describedby={fieldErrors.costPrice ? 'opcao-price-error' : undefined}
                 className={
                   fieldErrors.costPrice
                     ? 'border-red-400 focus-visible:ring-red-400'
@@ -293,7 +303,9 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
                 disabled={submitting}
               />
               {fieldErrors.costPrice && (
-                <p className="text-xs text-red-500">{fieldErrors.costPrice}</p>
+                <p id="opcao-price-error" role="alert" className="text-xs text-red-500">
+                  {fieldErrors.costPrice}
+                </p>
               )}
             </div>
 
