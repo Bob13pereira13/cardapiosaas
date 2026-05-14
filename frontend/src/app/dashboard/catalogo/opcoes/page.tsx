@@ -2,15 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
+import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
+import { API_URL } from '@/lib/config'
+import { getToken } from '@/lib/auth'
 import { OptionDto, OptionStockStatus } from '@/lib/option-types'
 import { useOptions } from '../hooks/useOptions'
 import { OpcaoCard } from '../components/OpcaoCard'
 import { OpcoesEmpty } from '../components/OpcoesEmpty'
+import { OpcaoFormModal } from '../components/OpcaoFormModal'
+import { ConfirmDeleteDialog } from '../components/ConfirmDeleteDialog'
 
 export default function OpcoesPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [deletingOption, setDeletingOption] = useState<OptionDto | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300)
@@ -22,20 +29,27 @@ export default function OpcoesPage() {
     includeUsage: true,
   })
 
-  function handleCreate() {
-    console.log('handleCreate')
-  }
+  const handleCreate = () => setEditingId('new')
+  const handleEdit = (id: number) => setEditingId(id)
+  const handleDelete = (option: OptionDto) => setDeletingOption(option)
 
-  function handleEdit(id: number) {
-    console.log('handleEdit', id)
-  }
-
-  function handleDelete(option: OptionDto) {
-    console.log('handleDelete', option.id)
-  }
-
-  function handleToggleStock(id: number, current: OptionStockStatus) {
-    console.log('handleToggleStock', id, current)
+  async function handleToggleStock(id: number, current: OptionStockStatus) {
+    const newStatus = current === 'OUT_OF_STOCK' ? 'ACTIVE' : 'OUT_OF_STOCK'
+    try {
+      const res = await fetch(`${API_URL}/options/${id}/stock-status`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ stockStatus: newStatus }),
+      })
+      if (!res.ok) throw new Error('Falha ao atualizar status')
+      toast.success(newStatus === 'OUT_OF_STOCK' ? 'Marcada em falta' : 'Marcada disponível')
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao atualizar status')
+    }
   }
 
   return (
@@ -103,6 +117,25 @@ export default function OpcoesPage() {
           ))}
         </div>
       )}
+
+      <OpcaoFormModal
+        open={editingId !== null}
+        onClose={() => setEditingId(null)}
+        optionId={editingId}
+        onSaved={() => {
+          setEditingId(null)
+          refetch()
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        option={deletingOption}
+        onClose={() => setDeletingOption(null)}
+        onDeleted={() => {
+          setDeletingOption(null)
+          refetch()
+        }}
+      />
     </div>
   )
 }
