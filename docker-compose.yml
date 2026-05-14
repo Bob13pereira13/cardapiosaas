@@ -34,6 +34,12 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       MARKETPLACE_ENCRYPTION_KEY: ${MARKETPLACE_ENCRYPTION_KEY:?MARKETPLACE_ENCRYPTION_KEY env var is required}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?R2_ACCOUNT_ID env var is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID env var is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY env var is required}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?R2_BUCKET_NAME env var is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT env var is required}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:?R2_PUBLIC_URL env var is required}
     ports:
       - "3000:3000"
     volumes:
