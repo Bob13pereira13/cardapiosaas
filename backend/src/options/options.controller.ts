@@ -12,8 +12,11 @@ import {
   Post,
   Query,
   Request,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
@@ -96,5 +99,28 @@ export class OptionsController {
     @Request() req: AuthenticatedRequest,
   ) {
     return this.service.toggleStockStatus(id, req.user.activeRestaurantId);
+  }
+
+  @Post(':id/upload-image')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 6 * 1024 * 1024 } }),
+  )
+  uploadImage(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    requireWriteRole(req);
+    return this.service.uploadImage(req.user.activeRestaurantId, id, file);
+  }
+
+  @Delete(':id/image')
+  @HttpCode(HttpStatus.OK)
+  removeImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    requireWriteRole(req);
+    return this.service.removeImage(req.user.activeRestaurantId, id);
   }
 }

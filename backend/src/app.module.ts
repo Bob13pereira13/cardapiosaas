@@ -44,6 +44,7 @@ import { CashRegisterModule } from './cash-register/cash-register.module';
 import { FiadoModule } from './fiado/fiado.module';
 import { AudiencesModule } from './audiences/audiences.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     FiadoModule,
     AudiencesModule,
     CampaignsModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

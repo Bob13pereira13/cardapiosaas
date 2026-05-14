@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -6,6 +7,9 @@ import {
 } from '@nestjs/common';
 import { Prisma, OptionStockStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { R2Service } from '../storage/r2.service';
+import { ImageProcessorService } from '../storage/image-processor.service';
+import { UploadResultDto } from '../storage/dto/upload-result.dto';
 import { CreateOptionDto } from './dto/create-option.dto';
 import { UpdateOptionDto } from './dto/update-option.dto';
 import { ListOptionsDto } from './dto/list-options.dto';
@@ -16,13 +20,24 @@ import {
 
 @Injectable()
 export class OptionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private r2: R2Service,
+    private imageProcessor: ImageProcessorService,
+  ) {}
 
   async list(
     restaurantId: number,
     dto: ListOptionsDto,
   ): Promise<PaginatedOptionsResponse> {
-    const { page = 1, limit = 20, search, isActive, stockStatus, includeUsage } = dto;
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      isActive,
+      stockStatus,
+      includeUsage,
+    } = dto;
     const skip = (page - 1) * limit;
 
     const where: Prisma.OptionWhereInput = {
@@ -69,9 +84,13 @@ export class OptionsService {
 
       if (!includeUsage) return base;
 
-      const co = (opt as typeof opt & {
-        complementOptions: Array<{ complement: { id: number; name: string } }>;
-      }).complementOptions;
+      const co = (
+        opt as typeof opt & {
+          complementOptions: Array<{
+            complement: { id: number; name: string };
+          }>;
+        }
+      ).complementOptions;
 
       return {
         ...base,
@@ -163,12 +182,18 @@ export class OptionsService {
         where: { id },
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
-          ...(dto.description !== undefined && { description: dto.description }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
           ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
           ...(dto.codePdv !== undefined && { codePdv: dto.codePdv }),
           ...(dto.costPrice !== undefined && { costPrice: dto.costPrice }),
-          ...(dto.useTechSheet !== undefined && { useTechSheet: dto.useTechSheet }),
-          ...(dto.stockStatus !== undefined && { stockStatus: dto.stockStatus }),
+          ...(dto.useTechSheet !== undefined && {
+            useTechSheet: dto.useTechSheet,
+          }),
+          ...(dto.stockStatus !== undefined && {
+            stockStatus: dto.stockStatus,
+          }),
           ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         },
       });
@@ -226,8 +251,67 @@ export class OptionsService {
         ? OptionStockStatus.OUT_OF_STOCK
         : OptionStockStatus.ACTIVE;
 
-    await this.prisma.option.update({ where: { id }, data: { stockStatus: next } });
+    await this.prisma.option.update({
+      where: { id },
+      data: { stockStatus: next },
+    });
 
     return this.findOne(id, restaurantId);
+  }
+
+  async uploadImage(
+    restaurantId: number,
+    optionId: number,
+    file: Express.Multer.File,
+  ): Promise<UploadResultDto> {
+    const opt = await this.prisma.option.findFirst({
+      where: { id: optionId, restaurantId, deletedAt: null },
+    });
+    if (!opt) throw new NotFoundException('Opção não encontrada.');
+
+    const processed = await this.imageProcessor.process(file);
+    const key = `options/${restaurantId}/${randomUUID()}.webp`;
+    const url = await this.r2.upload(
+      key,
+      processed.buffer,
+      processed.contentType,
+    );
+
+    if (opt.imageUrl) {
+      await this.r2.deleteByUrl(opt.imageUrl);
+    }
+
+    await this.prisma.option.update({
+      where: { id: optionId },
+      data: { imageUrl: url },
+    });
+
+    return {
+      url,
+      width: processed.width,
+      height: processed.height,
+      byteSize: processed.byteSize,
+    };
+  }
+
+  async removeImage(
+    restaurantId: number,
+    optionId: number,
+  ): Promise<{ ok: boolean }> {
+    const opt = await this.prisma.option.findFirst({
+      where: { id: optionId, restaurantId, deletedAt: null },
+    });
+    if (!opt) throw new NotFoundException('Opção não encontrada.');
+
+    if (opt.imageUrl) {
+      await this.r2.deleteByUrl(opt.imageUrl);
+    }
+
+    await this.prisma.option.update({
+      where: { id: optionId },
+      data: { imageUrl: null },
+    });
+
+    return { ok: true };
   }
 }
