@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { Search, Plus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useCategorias } from './hooks/useCategorias'
 import { useProducts } from './hooks/useProducts'
@@ -13,12 +12,12 @@ import { ConfirmDeleteCategoriaDialog } from './components/ConfirmDeleteCategori
 import { ProdutoCategoriaSection } from './components/ProdutoCategoriaSection'
 import { ProdutoEmpty } from './components/ProdutoEmpty'
 import { ConfirmDeleteProductDialog } from './components/ConfirmDeleteProductDialog'
+import { ProdutoFormModal } from './components/ProdutoFormModal'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { CategoryDto } from '@/lib/category-types'
 import type { ProductDto } from '@/lib/product-types'
 
 export default function ProdutosPage() {
-  const router = useRouter()
 
   // Categorias
   const {
@@ -49,6 +48,7 @@ export default function ProdutosPage() {
     duplicate,
   } = useProducts({ search })
   const [deletingProduct, setDeletingProduct] = useState<ProductDto | null>(null)
+  const [editingProduct, setEditingProduct] = useState<ProductDto | 'new' | null>(null)
 
   // Handlers categoria
   const handleDeleteCategoryConfirm = async () => {
@@ -65,8 +65,11 @@ export default function ProdutosPage() {
   }
 
   // Handlers produto
-  const handleCreateProduct = () => router.push('/dashboard/produtos/novo')
-  const handleEditProduct = (id: number) => router.push(`/dashboard/produtos/${id}/editar`)
+  const handleCreateProduct = () => setEditingProduct('new')
+  const handleEditProduct = (id: number) => {
+    const p = products.find((p) => p.id === id) ?? null
+    if (p) setEditingProduct(p)
+  }
 
   const handleDeleteProductConfirm = async () => {
     if (!deletingProduct) return
@@ -236,6 +239,14 @@ export default function ProdutosPage() {
         produto={deletingProduct}
         onClose={() => setDeletingProduct(null)}
         onConfirm={handleDeleteProductConfirm}
+      />
+
+      <ProdutoFormModal
+        open={editingProduct !== null}
+        onClose={() => setEditingProduct(null)}
+        product={editingProduct}
+        categorias={categorias}
+        onSaved={() => void refetchProducts()}
       />
     </div>
   )
