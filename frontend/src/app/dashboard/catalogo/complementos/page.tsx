@@ -8,6 +8,8 @@ import { useComplements } from '../hooks/useComplements'
 import { ComplementoCard } from '../components/ComplementoCard'
 import { ComplementosEmpty } from '../components/ComplementosEmpty'
 import { CatalogoErrorBoundary } from '../components/CatalogoErrorBoundary'
+import { ComplementoFormModal } from '../components/ComplementoFormModal'
+import { ConfirmDeleteComplementDialog } from '../components/ConfirmDeleteComplementDialog'
 
 export default function ComplementosPage() {
   const [searchInput, setSearchInput] = useState('')
@@ -28,11 +30,6 @@ export default function ComplementosPage() {
   const handleCreate = () => setEditingId('new')
   const handleEdit = (id: number) => setEditingId(id)
   const handleDelete = (complement: ComplementDto) => setDeletingComplement(complement)
-
-  // Placeholders — modais serão conectados na Fase 3.2
-  void editingId
-  void deletingComplement
-  void refetch
 
   return (
     <div>
@@ -100,6 +97,25 @@ export default function ComplementosPage() {
           </div>
         </CatalogoErrorBoundary>
       )}
+
+      <ComplementoFormModal
+        open={editingId !== null}
+        onClose={() => setEditingId(null)}
+        complementId={editingId}
+        onSaved={() => {
+          setEditingId(null)
+          refetch()
+        }}
+      />
+
+      <ConfirmDeleteComplementDialog
+        complement={deletingComplement}
+        onClose={() => setDeletingComplement(null)}
+        onDeleted={() => {
+          setDeletingComplement(null)
+          refetch()
+        }}
+      />
     </div>
   )
 }
