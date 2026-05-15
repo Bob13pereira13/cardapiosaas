@@ -29,7 +29,8 @@ export interface OpcaoFormModalProps {
   open: boolean
   onClose: () => void
   optionId: number | 'new' | null
-  onSaved: () => void
+  initialName?: string
+  onSaved: (newOptionId?: number) => void
 }
 
 interface FormState {
@@ -52,7 +53,7 @@ const EMPTY_FORM: FormState = {
   imageUrl: null,
 }
 
-export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormModalProps) {
+export function OpcaoFormModal({ open, onClose, optionId, initialName, onSaved }: OpcaoFormModalProps) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -72,7 +73,8 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
     setUploadProgress(0)
 
     if (optionId === 'new') {
-      setForm(EMPTY_FORM)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      setForm({ ...EMPTY_FORM, name: initialName ?? '' })
       return
     }
     if (typeof optionId === 'number') {
@@ -154,6 +156,7 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
           }
         }
         toast.success('Opção criada')
+        onSaved(savedOption.id)
       } else {
         // Edit mode
         // 1. Upload new image first (backend handles deleting old one)
@@ -184,9 +187,8 @@ export function OpcaoFormModal({ open, onClose, optionId, onSaved }: OpcaoFormMo
           throw new Error(err?.message ?? `Erro ${res.status}`)
         }
         toast.success('Opção atualizada')
+        onSaved()
       }
-
-      onSaved()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao salvar opção')
     } finally {
