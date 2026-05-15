@@ -23,11 +23,13 @@ import {
   type ComplementDto,
   type ComplementLink,
   type ComplementOptionDto,
+  type ComplementPriceMode,
   type ComplementSelectionRule,
   LINK_LABELS,
   SELECTION_RULE_LABELS,
 } from '@/lib/complement-types'
 import { useComplementMutations } from '../hooks/useComplementMutations'
+import { ComplementoConfigsAvancadas } from './ComplementoConfigsAvancadas'
 import { ComplementoOptionsSection } from './ComplementoOptionsSection'
 import { OpcaoFormModal } from './OpcaoFormModal'
 
@@ -54,6 +56,7 @@ const EMPTY_FORM = {
   availableLinks: [] as ComplementLink[],
   minSelections: 0,
   maxSelections: 1,
+  priceMode: 'SUM_OF_SELECTED' as ComplementPriceMode,
 }
 
 export function ComplementoFormModal({
@@ -68,6 +71,7 @@ export function ComplementoFormModal({
   const [availableLinks, setAvailableLinks] = useState<ComplementLink[]>(EMPTY_FORM.availableLinks)
   const [minSelections, setMinSelections] = useState(EMPTY_FORM.minSelections)
   const [maxSelections, setMaxSelections] = useState(EMPTY_FORM.maxSelections)
+  const [priceMode, setPriceMode] = useState<ComplementPriceMode>(EMPTY_FORM.priceMode)
   const [options, setOptions] = useState<ComplementOptionDto[]>([])
   const [creatingOptionInitialName, setCreatingOptionInitialName] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -89,6 +93,7 @@ export function ComplementoFormModal({
       setAvailableLinks(EMPTY_FORM.availableLinks)
       setMinSelections(EMPTY_FORM.minSelections)
       setMaxSelections(EMPTY_FORM.maxSelections)
+      setPriceMode(EMPTY_FORM.priceMode)
       setOptions([])
       return
     }
@@ -106,6 +111,7 @@ export function ComplementoFormModal({
           setAvailableLinks(data.availableLinks ?? [])
           setMinSelections(data.minSelections ?? 0)
           setMaxSelections(data.maxSelections ?? 1)
+          setPriceMode(data.priceMode ?? 'SUM_OF_SELECTED')
           setOptions(data.options ?? [])
         })
         .catch(() => toast.error('Erro ao carregar complemento'))
@@ -215,6 +221,7 @@ export function ComplementoFormModal({
         minSelections,
         maxSelections: selectionRule === 'SINGLE' ? 1 : maxSelections,
         availableLinks,
+        priceMode,
       }
 
       if (complementId === 'new') {
@@ -352,6 +359,7 @@ export function ComplementoFormModal({
                         onClick={() => toggleLink(link)}
                         disabled={submitting}
                         aria-pressed={active}
+                        aria-label={`${LINK_LABELS[link]}: ${active ? 'ativado' : 'desativado'}`}
                         className={cn(
                           'rounded-full border px-3 py-1.5 text-xs font-medium transition',
                           active
@@ -420,7 +428,7 @@ export function ComplementoFormModal({
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-900">Quantidade</h3>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
                       <Label htmlFor="comp-min">Mínimo</Label>
                       <Input
@@ -468,12 +476,12 @@ export function ComplementoFormModal({
                 disabled={submitting}
               />
 
-              {/* Placeholder Seção 7: Configurações avançadas (Fase 3.5) */}
-              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-                <p className="text-center text-xs text-gray-500">
-                  Configurações avançadas (cálculo de preço) em breve (Fase 3.5)
-                </p>
-              </div>
+              {/* Seção 7: Configurações avançadas */}
+              <ComplementoConfigsAvancadas
+                value={priceMode}
+                onChange={setPriceMode}
+                disabled={submitting}
+              />
             </div>
           )}
 
