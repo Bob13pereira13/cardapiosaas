@@ -8,6 +8,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ProductLink, ProductOrderType, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { R2Service } from '../storage/r2.service';
+import { ImageProcessorService } from '../storage/image-processor.service';
 import { ProductsService } from './products.service';
 
 const requiredLinks = [ProductLink.DELIVERY];
@@ -95,6 +97,15 @@ const mockPrisma = {
 
 const mockAudit = { log: jest.fn() };
 
+const mockR2 = {
+  upload: jest.fn(),
+  deleteByUrl: jest.fn(),
+};
+
+const mockImageProcessor = {
+  process: jest.fn(),
+};
+
 describe('ProductsService', () => {
   let service: ProductsService;
 
@@ -110,6 +121,8 @@ describe('ProductsService', () => {
         ProductsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditService, useValue: mockAudit },
+        { provide: R2Service, useValue: mockR2 },
+        { provide: ImageProcessorService, useValue: mockImageProcessor },
       ],
     }).compile();
 
@@ -439,6 +452,145 @@ describe('ProductsService', () => {
           updates: { disponivel: false },
         }),
       ).rejects.toThrow(UnprocessableEntityException);
+    });
+  });
+
+  describe('uploadImage', () => {
+    const fakeFile = {
+      buffer: Buffer.from('img'),
+      mimetype: 'image/jpeg',
+      size: 100,
+    } as Express.Multer.File;
+
+    const processed = {
+      buffer: Buffer.from('webp'),
+      contentType: 'image/webp' as const,
+      width: 800,
+      height: 600,
+      byteSize: 4,
+    };
+
+    it('throws NotFoundException when product not found', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue(null);
+      await expect(service.uploadImage(10, 1, fakeFile)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws NotFoundException when product belongs to another restaurant', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue(null);
+      await expect(service.uploadImage(99, 1, fakeFile)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('processes, uploads, updates DB and returns result', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        imagem: null,
+      });
+      mockImageProcessor.process.mockResolvedValue(processed);
+      mockR2.upload.mockResolvedValue(
+        'https://cdn.example.com/products/10/uuid.webp',
+      );
+      mockPrisma.product.update.mockResolvedValue({});
+
+      const result = await service.uploadImage(10, 1, fakeFile);
+
+      expect(mockImageProcessor.process).toHaveBeenCalledWith(fakeFile);
+      expect(mockR2.upload).toHaveBeenCalledWith(
+        expect.stringMatching(/^products\/10\/.+\.webp$/),
+        processed.buffer,
+        'image/webp',
+      );
+      expect(mockPrisma.product.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { imagem: 'https://cdn.example.com/products/10/uuid.webp' },
+      });
+      expect(result).toEqual({
+        url: 'https://cdn.example.com/products/10/uuid.webp',
+        width: 800,
+        height: 600,
+        byteSize: 4,
+      });
+    });
+
+    it('deletes old image before uploading new one', async () => {
+      const oldUrl = 'https://cdn.example.com/products/10/old.webp';
+      mockPrisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        imagem: oldUrl,
+      });
+      mockImageProcessor.process.mockResolvedValue(processed);
+      mockR2.upload.mockResolvedValue(
+        'https://cdn.example.com/products/10/new.webp',
+      );
+      mockPrisma.product.update.mockResolvedValue({});
+
+      await service.uploadImage(10, 1, fakeFile);
+
+      expect(mockR2.deleteByUrl).toHaveBeenCalledWith(oldUrl);
+    });
+
+    it('skips R2 delete when product has no existing image', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        imagem: null,
+      });
+      mockImageProcessor.process.mockResolvedValue(processed);
+      mockR2.upload.mockResolvedValue(
+        'https://cdn.example.com/products/10/uuid.webp',
+      );
+      mockPrisma.product.update.mockResolvedValue({});
+
+      await service.uploadImage(10, 1, fakeFile);
+
+      expect(mockR2.deleteByUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeImage', () => {
+    it('throws NotFoundException when product not found', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue(null);
+      await expect(service.removeImage(10, 1)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('deletes from R2 and nullifies imagem', async () => {
+      const oldUrl = 'https://cdn.example.com/products/10/old.webp';
+      mockPrisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        imagem: oldUrl,
+      });
+      mockR2.deleteByUrl.mockResolvedValue(undefined);
+      mockPrisma.product.update.mockResolvedValue({});
+
+      const result = await service.removeImage(10, 1);
+
+      expect(mockR2.deleteByUrl).toHaveBeenCalledWith(oldUrl);
+      expect(mockPrisma.product.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { imagem: null },
+      });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('skips R2 delete and still nullifies imagem when no image exists', async () => {
+      mockPrisma.product.findFirst.mockResolvedValue({
+        ...mockProduct,
+        imagem: null,
+      });
+      mockPrisma.product.update.mockResolvedValue({});
+
+      const result = await service.removeImage(10, 1);
+
+      expect(mockR2.deleteByUrl).not.toHaveBeenCalled();
+      expect(mockPrisma.product.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { imagem: null },
+      });
+      expect(result).toEqual({ ok: true });
     });
   });
 });

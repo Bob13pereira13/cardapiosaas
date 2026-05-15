@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -8,6 +9,9 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { R2Service } from '../storage/r2.service';
+import { ImageProcessorService } from '../storage/image-processor.service';
+import { UploadResultDto } from '../storage/dto/upload-result.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { AddComplementToProductDto } from './dto/add-complement-to-product.dto';
@@ -43,6 +47,8 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private r2: R2Service,
+    private imageProcessor: ImageProcessorService,
   ) {}
 
   private generateInternalCode(restaurantId: number): string {
@@ -565,5 +571,61 @@ export class ProductsService {
   // legacy delete kept for backward compatibility with existing callers
   async delete(id: number, restaurantId: number, accountId?: number) {
     return this.softDelete(restaurantId, id, accountId);
+  }
+
+  async uploadImage(
+    restaurantId: number,
+    productId: number,
+    file: Express.Multer.File,
+  ): Promise<UploadResultDto> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, restaurantId, deletedAt: null },
+    });
+    if (!product) throw new NotFoundException('Produto não encontrado.');
+
+    const processed = await this.imageProcessor.process(file);
+    const key = `products/${restaurantId}/${randomUUID()}.webp`;
+    const url = await this.r2.upload(
+      key,
+      processed.buffer,
+      processed.contentType,
+    );
+
+    if (product.imagem) {
+      await this.r2.deleteByUrl(product.imagem);
+    }
+
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { imagem: url },
+    });
+
+    return {
+      url,
+      width: processed.width,
+      height: processed.height,
+      byteSize: processed.byteSize,
+    };
+  }
+
+  async removeImage(
+    restaurantId: number,
+    productId: number,
+  ): Promise<{ ok: boolean }> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, restaurantId, deletedAt: null },
+    });
+    if (!product) throw new NotFoundException('Produto não encontrado.');
+
+    if (product.imagem) {
+      await this.r2.deleteByUrl(product.imagem);
+    }
+
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { imagem: null },
+    });
+
+    return { ok: true };
   }
 }

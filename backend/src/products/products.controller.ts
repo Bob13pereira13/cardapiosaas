@@ -14,7 +14,10 @@ import {
   HttpCode,
   HttpStatus,
   ParseIntPipe,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { MembershipRole } from '@prisma/client';
 import { RestaurantScopeGuard } from '../auth/restaurant-scope.guard';
@@ -166,6 +169,29 @@ export class ProductsController {
       id,
       dto,
     );
+  }
+
+  @Post(':id/upload-image')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() req: AuthReq,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    requireWriteRole(req);
+    return this.productsService.uploadImage(
+      req.user.activeRestaurantId,
+      id,
+      file,
+    );
+  }
+
+  @Delete(':id/image')
+  @HttpCode(HttpStatus.OK)
+  removeImage(@Param('id', ParseIntPipe) id: number, @Request() req: AuthReq) {
+    requireWriteRole(req);
+    return this.productsService.removeImage(req.user.activeRestaurantId, id);
   }
 
   @Delete(':id')
