@@ -3,8 +3,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { GripVertical, ImageIcon, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
 import type { ComplementOptionDto } from '@/lib/complement-types'
 import type { OptionDto } from '@/lib/option-types'
 import { useComplementMutations } from '../hooks/useComplementMutations'
@@ -25,11 +43,27 @@ interface OptionRowProps {
   disabled?: boolean
 }
 
-function OptionRow({ complementOption, onUpdate, onRemove, disabled }: OptionRowProps) {
+function SortableOptionRow({ complementOption, onUpdate, onRemove, disabled }: OptionRowProps) {
   const { option } = complementOption
   const [extraPrice, setExtraPrice] = useState(complementOption.extraPrice)
   const [isVisible, setIsVisible] = useState(complementOption.isVisible)
   const isFirstMount = useRef(true)
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: complementOption.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 1,
+  }
 
   useEffect(() => {
     setExtraPrice(complementOption.extraPrice)
@@ -53,11 +87,27 @@ function OptionRow({ complementOption, onUpdate, onRemove, disabled }: OptionRow
   }, [extraPrice])
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-3 py-2 hover:border-gray-200">
-      {/* Drag handle placeholder — funcional na Fase 3.4 */}
-      <div className="cursor-not-allowed text-gray-200" aria-hidden>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'flex items-center gap-2 rounded-md border bg-white px-3 py-2',
+        isDragging
+          ? 'border-brand-red shadow-lg'
+          : 'border-gray-100 hover:border-gray-200',
+      )}
+    >
+      {/* Drag handle — touch-none previne conflito com scroll em mobile */}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        disabled={disabled}
+        className="touch-none cursor-grab text-gray-400 hover:text-gray-600 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-30"
+        aria-label={`Arrastar ${option.name}`}
+      >
         <GripVertical className="h-4 w-4" />
-      </div>
+      </button>
 
       {/* Image */}
       <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100">
@@ -132,6 +182,15 @@ export function ComplementoOptionsSection({
   const prevKeyRef = useRef('')
   const mutations = useComplementMutations()
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
+
   // Re-sync from parent when options change (e.g., after loading from API)
   useEffect(() => {
     const key = optionsProp.map((o) => `${o.id}:${o.optionId}`).join(',')
@@ -144,6 +203,32 @@ export function ComplementoOptionsSection({
   function updateOptions(newOptions: ComplementOptionDto[]) {
     setOptions(newOptions)
     onChange(newOptions)
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = options.findIndex((o) => o.id === active.id)
+    const newIndex = options.findIndex((o) => o.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const previous = [...options]
+    const reordered = arrayMove(options, oldIndex, newIndex)
+    updateOptions(reordered)
+
+    if (complementId !== null) {
+      // Filter temp (not-yet-persisted) options — backend only knows positive IDs
+      const optionIds = reordered.filter((o) => o.id > 0).map((o) => o.optionId)
+      if (optionIds.length === 0) return
+
+      try {
+        await mutations.reorderOptions(complementId, optionIds)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Erro ao reordenar opções')
+        updateOptions(previous)
+      }
+    }
   }
 
   async function handleAddOption(option: OptionDto) {
@@ -242,17 +327,28 @@ export function ComplementoOptionsSection({
       </div>
 
       {options.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-gray-200 p-2">
-          {options.map((opt) => (
-            <OptionRow
-              key={opt.id}
-              complementOption={opt}
-              onUpdate={(updates) => void handleUpdateOption(opt.id, updates)}
-              onRemove={() => void handleRemoveOption(opt.id)}
-              disabled={disabled}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={(e) => void handleDragEnd(e)}
+        >
+          <SortableContext
+            items={options.map((o) => o.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2 rounded-lg border border-gray-200 p-2">
+              {options.map((opt) => (
+                <SortableOptionRow
+                  key={opt.id}
+                  complementOption={opt}
+                  onUpdate={(updates) => void handleUpdateOption(opt.id, updates)}
+                  onRemove={() => void handleRemoveOption(opt.id)}
+                  disabled={disabled}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <OptionAutocomplete
