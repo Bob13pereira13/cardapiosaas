@@ -138,13 +138,15 @@ GET /options?search=X&limit=10                 autocomplete de opções
 
 ## Bugs e limitações conhecidas
 
-### ⚠️ Backend: DELETE /complements/:id não bloqueia se em uso
+*(Nenhum bug aberto.)*
 
-**Comportamento atual:** `DELETE /complements/:id` retorna 200 mesmo quando o complemento está vinculado a produtos (deveria ser 422 com mensagem).
+### ✅ Auditoria softDelete cross-entity (pós Fase 3, commit cb818c9)
 
-**Impacto:** Frontend trata qualquer erro com toast, mas remoção silenciosa pode gerar inconsistência em dados de pedidos. Crítico investigar antes da Fase 4B onde produtos vão vincular complementos extensivamente.
+Diagnóstico completo revelou que o relatório original continha um falso positivo:
 
-**Workaround atual:** Badge "Usado em N produtos" no card serve como aviso visual; sem bloqueio real no backend.
+- **Complement.softDelete**: retorna 422 corretamente desde a Fase 1A.3. O smoke da Fase 3 testou um complement sem vínculos (cleanup), não um complement em uso.
+- **Option.softDelete**: retornava 400 (BadRequestException) em vez de 422 (UnprocessableEntityException) — inconsistência de semântica HTTP, não um bug funcional. Corrigida em `cb818c9`.
+- **Product.softDelete**: sem bloqueio (comportamento correto — snapshots de pedidos preservam histórico).
 
 ---
 
