@@ -1,7 +1,7 @@
 import {
-  BadRequestException,
   ConflictException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { OptionStockStatus, Prisma } from '@prisma/client';
@@ -123,13 +123,13 @@ describe('OptionsService', () => {
       );
     });
 
-    it('throws BadRequestException when option is in use', async () => {
+    it('throws UnprocessableEntityException when option is in use', async () => {
       mockPrisma.option.findFirst.mockResolvedValue({
         ...mockOption,
         complementOptions: [{ id: 99 }],
       });
       await expect(service.softDelete(1, 10)).rejects.toThrow(
-        BadRequestException,
+        UnprocessableEntityException,
       );
     });
 

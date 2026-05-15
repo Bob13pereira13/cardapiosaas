@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto';
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma, OptionStockStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -224,7 +224,7 @@ export class OptionsService {
     if (!opt) throw new NotFoundException('Opção não encontrada.');
 
     if (opt.complementOptions.length > 0) {
-      throw new BadRequestException(
+      throw new UnprocessableEntityException(
         `Opção em uso por ${opt.complementOptions.length} complemento(s). Remova o vínculo antes de excluir.`,
       );
     }
