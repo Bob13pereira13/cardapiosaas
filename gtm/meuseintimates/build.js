@@ -107,7 +107,7 @@ function buildWeb() {
       type: 'MATCH_REGEX',
       parameter: [
         tpl('arg0', '{{_event}}'),
-        tpl('arg1', '^(view_item|view_item_list|select_item|add_to_cart|remove_from_cart|view_cart|begin_checkout|add_shipping_info|add_payment_info|purchase|view_promotion|select_promotion|search|sign_up)$')
+        tpl('arg1', '^(view_item|begin_checkout|purchase)$')
       ]
     }]
   });

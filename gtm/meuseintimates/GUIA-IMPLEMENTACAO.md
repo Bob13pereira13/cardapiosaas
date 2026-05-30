@@ -168,14 +168,20 @@ A Tray **não** usa nomes GA4 nativos: ela dispara nomes próprios em **dois for
 (produto = campos achatados na raiz; carrinho/checkout/compra = Enhanced Ecommerce).
 O roteamento é feito por `event` + `pageCategory`:
 
-| `event` (Tray) | `pageCategory` (Tray) | → GA4 | → Meta | Origem dos dados |
-|---|---|---|---|---|
-| `tray.updateGTM` | `Produto` | `view_item` | ViewContent | raiz: `idProduct`, `nameProduct`, `priceSell`, `listSku[]`, `breadcrumbDetails` |
-| `cart` | `Carrinho` | `view_cart` | ViewContent | `ecommerce.checkout.products[]` |
-| `checkout` | `EasyCheckout_Identification` (step 1) | `begin_checkout` | InitiateCheckout | `ecommerce.checkout.products[]` |
-| `checkout` | `EasyCheckout_*Shipping/Delivery*` | `add_shipping_info` | AddShippingInfo | `ecommerce.checkout.products[]` |
-| `checkout` | `EasyCheckout_*Payment*` | `add_payment_info` | AddPaymentInfo | `ecommerce.checkout.products[]` + `option` |
-| `purchase` | `EasyCheckout_OrderPlaced` (step 6) | `purchase` | Purchase | `ecommerce.purchase.actionField` + `products[]` + cliente na raiz |
+**Funil enxuto (5 etapas, por opção do projeto):**
+`PageView` → `ViewContent` → `AddToCart` → `InitiateCheckout` → `Purchase`
+
+| Origem (Tray) | → GA4 | → Meta | Dados |
+|---|---|---|---|
+| Todas as páginas | — (config) | **PageView** | Pixel base + GA4 Config |
+| `tray.updateGTM` / `Produto` | `view_item` | **ViewContent** | raiz: `idProduct`, `nameProduct`, `priceSell`, `listSku[]`, `breadcrumbDetails` |
+| **clique `#button-buy`** | `add_to_cart` | **AddToCart** | produto da página (`CJS - atc_ecommerce`) |
+| `checkout` / `EasyCheckout_Identification` | `begin_checkout` | **InitiateCheckout** | `ecommerce.checkout.products[]` |
+| `purchase` / `EasyCheckout_OrderPlaced` | `purchase` | **Purchase** | `ecommerce.purchase.actionField` + `products[]` + cliente na raiz |
+
+> O evento `cart` (página do carrinho) é **ignorado de propósito** — o sinal de carrinho
+> é o `add_to_cart` no clique do botão. Eventos secundários (`view_item_list`,
+> `add_shipping_info`, etc.) não fazem parte deste funil.
 
 **Mapeamento de campos (item):**
 

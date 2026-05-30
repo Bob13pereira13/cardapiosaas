@@ -144,18 +144,24 @@
   }
 
   /* ---------- roteamento por evento/pageCategory ---------- */
+  /*
+   * Funil enxuto desta loja (5 etapas):
+   *   PageView -> view_item -> add_to_cart -> begin_checkout -> purchase
+   *
+   * - PageView: tratado pelo Meta Pixel base + GA4 Config (todas as paginas)
+   * - add_to_cart: disparado por CLIQUE no botao "Comprar" (#button-buy),
+   *   NAO aqui (a loja so emite o evento "cart" da pagina do carrinho, que
+   *   propositalmente NAO mapeamos para nao duplicar com o add_to_cart).
+   * Por isso o evento "cart" (pagina do carrinho) e ignorado abaixo.
+   */
   function classify(o) {
     var ev = ('' + (o.event || '')).toLowerCase();
     var pc = ('' + (o.pageCategory || '')).toLowerCase();
 
     if (ev === 'tray.updategtm' && pc.indexOf('produto') > -1) { return 'view_item'; }
-    if (ev === 'cart' || pc === 'carrinho') { return 'view_cart'; }
     if (ev === 'purchase' || pc.indexOf('orderplaced') > -1) { return 'purchase'; }
-    if (ev === 'checkout' || pc.indexOf('easycheckout') > -1) {
-      if (pc.indexOf('payment') > -1) { return 'add_payment_info'; }
-      if (pc.indexOf('shipping') > -1 || pc.indexOf('delivery') > -1 || pc.indexOf('frete') > -1) { return 'add_shipping_info'; }
-      return 'begin_checkout'; // Identification / step 1 (default)
-    }
+    if (ev === 'checkout' || pc.indexOf('easycheckout') > -1) { return 'begin_checkout'; }
+    // ev === 'cart' (pagina do carrinho) -> ignorado de proposito (funil enxuto)
     return null;
   }
 
@@ -173,14 +179,10 @@
       items = it ? [it] : [];
       out.ecommerce.items = items;
       out.ecommerce.value = sumValue(items);
-    } else if (kind === 'view_cart' || kind === 'begin_checkout' ||
-               kind === 'add_shipping_info' || kind === 'add_payment_info') {
+    } else if (kind === 'begin_checkout') {
       items = itemsFromEEC((ec.checkout && ec.checkout.products) || ec.products);
       out.ecommerce.items = items;
       out.ecommerce.value = sumValue(items);
-      if (kind === 'add_payment_info' && ec.checkout && ec.checkout.actionField && ec.checkout.actionField.option) {
-        out.ecommerce.payment_type = ec.checkout.actionField.option;
-      }
     } else if (kind === 'purchase') {
       var pf = (ec.purchase && ec.purchase.actionField) || {};
       items = itemsFromEEC((ec.purchase && ec.purchase.products) ||

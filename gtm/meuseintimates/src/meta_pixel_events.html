@@ -16,19 +16,13 @@
   // se vierem dados de usuario nesta pagina, reforca o Advanced Matching
   if (ud) { try { fbq('init', {{Const - Meta Pixel ID}}, ud); } catch (e) {} }
 
-  // GA4 event -> Meta standard event
+  // GA4 event -> Meta standard event (funil enxuto: 5 etapas)
+  // PageView (base) + ViewContent + AddToCart (clique) + InitiateCheckout + Purchase
   var MAP = {
     view_item: 'ViewContent',
-    view_item_list: 'ViewContent',
-    add_to_cart: 'AddToCart',
-    add_to_wishlist: 'AddToWishlist',
     begin_checkout: 'InitiateCheckout',
-    add_payment_info: 'AddPaymentInfo',
-    add_shipping_info: 'AddShippingInfo',
-    purchase: 'Purchase',
-    search: 'Search',
-    sign_up: 'CompleteRegistration',
-    view_cart: 'ViewContent'
+    purchase: 'Purchase'
+    // add_to_cart -> AddToCart e disparado pela tag dedicada do clique no botao Comprar
   };
   var metaEvent = MAP[ev];
   if (!metaEvent) { return; }
