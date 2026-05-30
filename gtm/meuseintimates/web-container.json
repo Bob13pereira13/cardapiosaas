@@ -1,6 +1,6 @@
 {
   "exportFormatVersion": 2,
-  "exportTime": "2026-05-30T16:03:36.910Z",
+  "exportTime": "2026-05-30T16:14:51.715Z",
   "containerVersion": {
     "path": "accounts/0/containers/0/versions/0",
     "accountId": "0",
@@ -370,6 +370,107 @@
       },
       {
         "tagId": "7",
+        "name": "GA4 - add_to_cart (clique Comprar)",
+        "type": "gaawe",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "add_to_cart"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementId",
+            "value": "{{Const - GA4 Measurement ID}}"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "true"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "ecommerceMacroData",
+            "value": "{{CJS - atc_ecommerce}}"
+          },
+          {
+            "type": "LIST",
+            "key": "eventParameters",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "event_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - event_id}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "external_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_external_id}}"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "firingTriggerId": [
+          "3"
+        ],
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "8",
+        "name": "Meta Pixel - AddToCart (clique Comprar)",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n/*\n * Meta Pixel - AddToCart (clique no botao \"Comprar\" da pagina de produto)\n * Le o produto via {{CJS - atc_ecommerce}} e usa o MESMO event_id do GA4 (dedupe c/ CAPI).\n * Disparado no gatilho de clique #button-buy; envio resiste ao redirect (fbq usa beacon).\n */\n(function () {\n  if (typeof fbq !== 'function') { return; }\n  var ec = {{CJS - atc_ecommerce}};\n  if (!ec || !ec.items || !ec.items.length) { return; }\n  var eid = {{CJS - event_id}};\n  var ud = {{CJS - user_data}};\n  if (ud) { try { fbq('init', {{Const - Meta Pixel ID}}, ud); } catch (e) {} }\n\n  var ids = [], contents = [], n = 0;\n  for (var i = 0; i < ec.items.length; i++) {\n    var it = ec.items[i], q = parseInt(it.quantity, 10) || 1;\n    if (it.item_id != null) { ids.push('' + it.item_id); }\n    contents.push({ id: '' + it.item_id, quantity: q, item_price: parseFloat(it.price) || undefined });\n    n += q;\n  }\n  var params = { currency: ec.currency || 'BRL', content_type: 'product', value: parseFloat(ec.value) || undefined,\n    content_ids: ids, contents: contents, num_items: n };\n  if (ec.items[0].item_name) { params.content_name = ec.items[0].item_name; }\n  if (ec.items[0].item_category) { params.content_category = ec.items[0].item_category; }\n\n  fbq('track', 'AddToCart', params, eid ? { eventID: eid } : undefined);\n})();\n</script>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "3"
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "key": "",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "9",
         "name": "Google Ads - Conversion Linker",
         "type": "lcl",
         "parameter": [
@@ -385,7 +486,7 @@
         "tagFiringOption": "oncePerEvent"
       },
       {
-        "tagId": "8",
+        "tagId": "10",
         "name": "Google Ads - Remarketing",
         "type": "sp",
         "parameter": [
@@ -419,7 +520,7 @@
         "tagFiringOption": "oncePerEvent"
       },
       {
-        "tagId": "9",
+        "tagId": "11",
         "name": "Google Ads - Conversao Compra",
         "type": "awct",
         "parameter": [
@@ -522,6 +623,29 @@
             ]
           }
         ]
+      },
+      {
+        "triggerId": "3",
+        "name": "Click - Botao Comprar (add_to_cart)",
+        "type": "CLICK",
+        "filter": [
+          {
+            "type": "CSS_SELECTOR",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{Click Element}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "#button-buy, [data-tray-tst=\"button_buy_product\"], button.botao-comprar, button.botao-comprar *"
+              }
+            ]
+          }
+        ],
+        "autoEventFilter": []
       }
     ],
     "variable": [
@@ -765,6 +889,18 @@
       },
       {
         "variableId": "15",
+        "name": "CJS - atc_ecommerce",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function () {\n  /*\n   * Monta o objeto ecommerce (padrao GA4) do produto exibido na PAGINA DE PRODUTO,\n   * para o evento add_to_cart disparado no CLIQUE do botao \"Comprar\" (#button-buy).\n   * Le o formato ACHATADO da Tray (idProduct, nameProduct, priceSell, listSku[]).\n   * Retorna undefined se nao estiver numa pagina de produto.\n   */\n  try {\n    var dl = window.dataLayer || [];\n    var o = null;\n    for (var i = dl.length - 1; i >= 0; i--) {\n      var e = dl[i];\n      if (e && typeof e === 'object' && e.idProduct &&\n          ('' + (e.pageCategory || '')).toLowerCase().indexOf('produto') > -1) { o = e; break; }\n    }\n    if (!o) { return undefined; }\n\n    function num(v) {\n      if (v == null || v === '') { return undefined; }\n      var n = parseFloat(('' + v).replace(/[^0-9.,-]/g, '').replace(',', '.'));\n      return isNaN(n) ? undefined : n;\n    }\n\n    var item = {\n      item_id: o.idProduct,\n      item_name: o.nameProduct,\n      price: num(o.priceSell != null ? o.priceSell : o.price),\n      quantity: 1\n    };\n    if (o.brand) { item.item_brand = o.brand; }\n    if (o.EAN) { item.ean = o.EAN; }\n    if (o.listSku && o.listSku.length && o.listSku[0].nameSku) { item.item_variant = o.listSku[0].nameSku; }\n    if (o.breadcrumbDetails && o.breadcrumbDetails.length) {\n      var c = o.breadcrumbDetails.slice().sort(function (a, b) { return (a.level || 0) - (b.level || 0); });\n      for (var j = 0; j < c.length && j < 5; j++) { item['item_category' + (j === 0 ? '' : (j + 1))] = c[j].name; }\n    } else if (o.category) { item.item_category = o.category; }\n\n    return {\n      currency: 'BRL',\n      value: (num(item.price) || 0) * 1,\n      items: [item]\n    };\n  } catch (e) { return undefined; }\n}\n"
+          }
+        ]
+      },
+      {
+        "variableId": "16",
         "name": "CJS - ud_em",
         "type": "jsm",
         "parameter": [
@@ -776,7 +912,7 @@
         ]
       },
       {
-        "variableId": "16",
+        "variableId": "17",
         "name": "CJS - ud_ph",
         "type": "jsm",
         "parameter": [
@@ -788,7 +924,7 @@
         ]
       },
       {
-        "variableId": "17",
+        "variableId": "18",
         "name": "CJS - ud_fn",
         "type": "jsm",
         "parameter": [
@@ -800,7 +936,7 @@
         ]
       },
       {
-        "variableId": "18",
+        "variableId": "19",
         "name": "CJS - ud_ln",
         "type": "jsm",
         "parameter": [
@@ -812,7 +948,7 @@
         ]
       },
       {
-        "variableId": "19",
+        "variableId": "20",
         "name": "CJS - ud_ct",
         "type": "jsm",
         "parameter": [
@@ -824,7 +960,7 @@
         ]
       },
       {
-        "variableId": "20",
+        "variableId": "21",
         "name": "CJS - ud_st",
         "type": "jsm",
         "parameter": [
@@ -836,7 +972,7 @@
         ]
       },
       {
-        "variableId": "21",
+        "variableId": "22",
         "name": "CJS - ud_zp",
         "type": "jsm",
         "parameter": [
@@ -848,7 +984,7 @@
         ]
       },
       {
-        "variableId": "22",
+        "variableId": "23",
         "name": "CJS - ud_country",
         "type": "jsm",
         "parameter": [
@@ -860,7 +996,7 @@
         ]
       },
       {
-        "variableId": "23",
+        "variableId": "24",
         "name": "CJS - ud_external_id",
         "type": "jsm",
         "parameter": [
@@ -905,6 +1041,18 @@
       },
       {
         "type": "CLICK_TEXT"
+      },
+      {
+        "type": "CLICK_ELEMENT"
+      },
+      {
+        "type": "CLICK_CLASSES"
+      },
+      {
+        "type": "CLICK_ID"
+      },
+      {
+        "type": "CLICK_TARGET"
       }
     ],
     "fingerprint": "0"

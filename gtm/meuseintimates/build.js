@@ -16,6 +16,8 @@ const metaBase = read('meta_pixel_base.html');
 const metaEvents = read('meta_pixel_events.html');
 const eventIdJs = read('event_id.js');
 const userDataJs = read('user_data.js');
+const atcEcommerceJs = read('atc_ecommerce.js');
+const metaAddToCart = read('meta_addtocart.html');
 
 /* ---------- helpers de parametro ---------- */
 const tpl = (key, value) => ({ type: 'TEMPLATE', key, value });
@@ -80,6 +82,8 @@ function buildWeb() {
   variable.push({ variableId: V_EID, name: 'CJS - event_id', type: 'jsm', parameter: [tpl('javascript', eventIdJs)] });
   const V_UD = nv();
   variable.push({ variableId: V_UD, name: 'CJS - user_data', type: 'jsm', parameter: [tpl('javascript', userDataJs)] });
+  const V_ATC = nv();
+  variable.push({ variableId: V_ATC, name: 'CJS - atc_ecommerce', type: 'jsm', parameter: [tpl('javascript', atcEcommerceJs)] });
 
   // ---- Wrappers de campo do user_data (escalares p/ enviar ao server) ----
   const udFields = [
@@ -112,6 +116,18 @@ function buildWeb() {
   trigger.push({
     triggerId: TR_PURCHASE, name: 'CE - purchase', type: 'CUSTOM_EVENT',
     customEventFilter: [{ type: 'EQUALS', parameter: [tpl('arg0', '{{_event}}'), tpl('arg1', 'purchase')] }]
+  });
+
+  // Clique no botao "Comprar" (#button-buy / data-tray-tst=button_buy_product) -> add_to_cart
+  const TR_ATC = ntr();
+  trigger.push({
+    triggerId: TR_ATC, name: 'Click - Botao Comprar (add_to_cart)', type: 'CLICK',
+    filter: [
+      { type: 'CSS_SELECTOR', parameter: [tpl('arg0', '{{Click Element}}'),
+        tpl('arg1', '#button-buy, [data-tray-tst="button_buy_product"], button.botao-comprar, button.botao-comprar *')] }
+    ],
+    // dispara em todos os cliques e filtra pelo seletor acima
+    autoEventFilter: []
   });
 
   // ---- Tags ----
@@ -185,6 +201,31 @@ function buildWeb() {
     tagFiringOption: 'oncePerEvent'
   });
 
+  // GA4 add_to_cart (clique no botao Comprar) - le ecommerce da variavel da pagina
+  tag.push({
+    tagId: nt(), name: 'GA4 - add_to_cart (clique Comprar)', type: 'gaawe',
+    parameter: [
+      tpl('eventName', 'add_to_cart'),
+      tpl('measurementId', '{{Const - GA4 Measurement ID}}'),
+      bool('sendEcommerceData', true),
+      tpl('ecommerceMacroData', '{{CJS - atc_ecommerce}}'),
+      list('eventParameters', [
+        mapRow('event_id', '{{CJS - event_id}}'),
+        mapRow('external_id', '{{CJS - ud_external_id}}')
+      ])
+    ],
+    firingTriggerId: [TR_ATC], tagFiringOption: 'oncePerEvent'
+  });
+
+  // Meta AddToCart (clique no botao Comprar) - mesmo event_id (dedupe)
+  tag.push({
+    tagId: nt(), name: 'Meta Pixel - AddToCart (clique Comprar)', type: 'html',
+    parameter: [tpl('html', metaAddToCart), bool('supportDocumentWrite', false)],
+    firingTriggerId: [TR_ATC],
+    consentSettings: { consentStatus: 'NEEDED', consentType: { type: 'LIST', list: [tpl('', 'ad_storage')] } },
+    tagFiringOption: 'oncePerEvent'
+  });
+
   // Conversion Linker
   tag.push({
     tagId: nt(), name: 'Google Ads - Conversion Linker', type: 'lcl',
@@ -224,7 +265,8 @@ function buildWeb() {
   const builtInVariable = [
     'PAGE_URL', 'PAGE_HOSTNAME', 'PAGE_PATH', 'REFERRER', 'EVENT',
     'CONTAINER_ID', 'CONTAINER_VERSION', 'RANDOM_NUMBER', 'DEBUG_MODE',
-    'CLICK_URL', 'CLICK_TEXT'
+    'CLICK_URL', 'CLICK_TEXT', 'CLICK_ELEMENT', 'CLICK_CLASSES', 'CLICK_ID',
+    'CLICK_TARGET'
   ].map((t) => ({ type: t }));
 
   return wrap('GTM-WEBMEUSE', ['WEB'], { tag, trigger, variable, builtInVariable });

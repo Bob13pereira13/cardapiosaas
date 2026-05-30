@@ -1,0 +1,29 @@
+<script>
+/*
+ * Meta Pixel - AddToCart (clique no botao "Comprar" da pagina de produto)
+ * Le o produto via {{CJS - atc_ecommerce}} e usa o MESMO event_id do GA4 (dedupe c/ CAPI).
+ * Disparado no gatilho de clique #button-buy; envio resiste ao redirect (fbq usa beacon).
+ */
+(function () {
+  if (typeof fbq !== 'function') { return; }
+  var ec = {{CJS - atc_ecommerce}};
+  if (!ec || !ec.items || !ec.items.length) { return; }
+  var eid = {{CJS - event_id}};
+  var ud = {{CJS - user_data}};
+  if (ud) { try { fbq('init', {{Const - Meta Pixel ID}}, ud); } catch (e) {} }
+
+  var ids = [], contents = [], n = 0;
+  for (var i = 0; i < ec.items.length; i++) {
+    var it = ec.items[i], q = parseInt(it.quantity, 10) || 1;
+    if (it.item_id != null) { ids.push('' + it.item_id); }
+    contents.push({ id: '' + it.item_id, quantity: q, item_price: parseFloat(it.price) || undefined });
+    n += q;
+  }
+  var params = { currency: ec.currency || 'BRL', content_type: 'product', value: parseFloat(ec.value) || undefined,
+    content_ids: ids, contents: contents, num_items: n };
+  if (ec.items[0].item_name) { params.content_name = ec.items[0].item_name; }
+  if (ec.items[0].item_category) { params.content_category = ec.items[0].item_category; }
+
+  fbq('track', 'AddToCart', params, eid ? { eventID: eid } : undefined);
+})();
+</script>

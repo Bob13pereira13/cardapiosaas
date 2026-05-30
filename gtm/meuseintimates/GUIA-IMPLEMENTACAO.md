@@ -198,13 +198,19 @@ página logada — `email`/`customerEmail`, `customerName`→`first/last_name`,
 `visitorDemographicInfo.zipCode/city/state`, e **`external_id`** ← `customerId`/`userId`/`visitorId`
 (este último presente em **todas** as páginas, então o match nunca fica zerado).
 
-> ⚠️ **`add_to_cart` (AddToCart):** nos dataLayers capturados a loja **não** emite um
-> evento ao clicar em "Comprar/Adicionar ao carrinho" — o evento `cart` que existe é a
-> **página do carrinho** (mapeada como `view_cart`). Se você quiser o `add_to_cart`
-> (recomendado p/ funil e otimização do Meta/Ads), confirme: ao clicar no botão de
-> adicionar, surge algo novo no `dataLayer`? Se **não**, crie no GTM Web um gatilho de
-> **clique** no botão (ex.: seletor do botão "Comprar" / `Click Element matches CSS`) e
-> uma tag GA4 `add_to_cart` lendo o produto da página. Me avise que eu já deixo pronto.
+> ✅ **`add_to_cart` (AddToCart) — JÁ IMPLEMENTADO via clique.** A loja não emite evento
+> no dataLayer ao clicar em "Comprar" (ela redireciona para o carrinho, que dispara
+> `cart` → mapeado como `view_cart`). Por isso o `add_to_cart` é disparado por um
+> **gatilho de clique** no botão de compra:
+> - **Trigger:** `Click - Botao Comprar (add_to_cart)` — Click (All Elements) filtrado por
+>   `Click Element` matches CSS `#button-buy, [data-tray-tst="button_buy_product"], button.botao-comprar, button.botao-comprar *`
+>   (o `*` cobre o clique no `<span>` interno do botão).
+> - **Dados:** a variável `CJS - atc_ecommerce` lê o produto da página (formato achatado
+>   da Tray) e monta `items[]`. Tags `GA4 - add_to_cart` e `Meta Pixel - AddToCart`
+>   disparam com o **mesmo `event_id`** (dedupe).
+> - O envio resiste ao redirecionamento (GA4/Pixel usam beacon). Valide no Preview que o
+>   `add_to_cart` aparece ao clicar em "Comprar". Se a Tray algum dia passar a emitir um
+>   evento próprio de adicionar ao carrinho, troque para esse gatilho.
 
 > Os eventos `view_item_list`, `select_item`, `remove_from_cart`, `search`, `sign_up`
 > ficam suportados no GTM, mas **só dispararão** se a Tray (ou um gatilho extra)
