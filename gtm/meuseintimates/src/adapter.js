@@ -1,20 +1,33 @@
 <script>
 /*
- * Tray -> GA4 dataLayer Adapter  |  meuseintimates.com.br
+ * Tray (loja MEUSE INTIMATES) -> GA4 dataLayer Adapter
  * ------------------------------------------------------------------
- * Objetivo: deixar o tagueamento "100% redondo" independente do formato
- * que a Tray usar. A Tray pode empurrar eventos no formato antigo
- * (Universal Analytics / Enhanced Ecommerce) OU no formato GA4. Este
- * adapter:
- *   1) Escuta tudo que entra no dataLayer (push original + itens ja existentes)
- *   2) Se o evento ja estiver no padrao GA4 (tem ecommerce.items) -> passa direto
- *   3) Se estiver no padrao UA/EEC (ecommerce.detail/add/remove/checkout/...)
- *      -> converte para o evento GA4 equivalente com ecommerce.items
- *   4) Sempre limpa ecommerce (ecommerce:null) antes de empurrar o normalizado,
- *      evitando "vazamento" de itens entre eventos.
+ * Calibrado com os dataLayers REAIS da loja meuseintimates.com.br.
  *
- * IMPORTANTE: valide no GTM Preview os NOMES de evento que a Tray dispara
- * e ajuste o mapa MAP abaixo se necessario. Tudo esta centralizado aqui.
+ * A Tray desta loja dispara eventos com NOMES proprios e em DOIS formatos:
+ *
+ *   1) PRODUTO  -> event:"tray.updateGTM", pageCategory:"Produto"
+ *                  dados ACHATADOS na raiz (idProduct, nameProduct, priceSell, listSku[])
+ *                  => GA4 view_item / Meta ViewContent
+ *
+ *   2) CARRINHO -> event:"cart", pageCategory:"Carrinho"
+ *                  Enhanced Ecommerce em ecommerce.checkout.products[]
+ *                  => GA4 view_cart / Meta ViewContent
+ *
+ *   3) CHECKOUT -> event:"checkout", pageCategory:"EasyCheckout_Identification" (step 1)
+ *                  EEC em ecommerce.checkout.products[]
+ *                  => GA4 begin_checkout / Meta InitiateCheckout
+ *                  (steps de entrega/pagamento -> add_shipping_info/add_payment_info)
+ *
+ *   4) COMPRA   -> event:"purchase", pageCategory:"EasyCheckout_OrderPlaced" (step 6)
+ *                  EEC em ecommerce.purchase.actionField + products[]
+ *                  + dados do cliente na RAIZ (email, customerName, customerId,
+ *                    visitorDemographicInfo{zipCode,city,state,...})
+ *                  => GA4 purchase / Meta Purchase  (+ user_data p/ CAPI/Advanced Matching)
+ *
+ * Estrategia: este adapter le o evento BRUTO da Tray, normaliza para o
+ * padrao GA4 (ecommerce.items) e re-empurra com o nome de evento GA4 + um
+ * objeto user_data. Os gatilhos do GTM disparam nos nomes GA4.
  */
 (function () {
   var w = window;
@@ -22,86 +35,75 @@
   if (w.__trayGa4AdapterLoaded) { return; }
   w.__trayGa4AdapterLoaded = true;
 
-  // Eventos que ja sao GA4 nativos -> nao mexer
-  var GA4_NATIVE = {
-    view_item: 1, view_item_list: 1, select_item: 1, add_to_cart: 1,
-    remove_from_cart: 1, view_cart: 1, begin_checkout: 1, add_shipping_info: 1,
-    add_payment_info: 1, purchase: 1, refund: 1, view_promotion: 1,
-    select_promotion: 1, search: 1, sign_up: 1, login: 1, add_to_wishlist: 1
-  };
-
-  // Mapa de nomes de evento UA/Tray -> evento GA4
-  var MAP = {
-    'productImpression': 'view_item_list',
-    'eec.impressionView': 'view_item_list',
-    'impressionView': 'view_item_list',
-    'impressions': 'view_item_list',
-    'productClick': 'select_item',
-    'eec.productClick': 'select_item',
-    'productDetail': 'view_item',
-    'eec.detail': 'view_item',
-    'detail': 'view_item',
-    'productView': 'view_item',
-    'addToCart': 'add_to_cart',
-    'eec.add': 'add_to_cart',
-    'add': 'add_to_cart',
-    'removeFromCart': 'remove_from_cart',
-    'eec.remove': 'remove_from_cart',
-    'remove': 'remove_from_cart',
-    'checkout': 'begin_checkout',
-    'eec.checkout': 'begin_checkout',
-    'beginCheckout': 'begin_checkout',
-    'purchase': 'purchase',
-    'eec.purchase': 'purchase',
-    'transaction': 'purchase',
-    'promoView': 'view_promotion',
-    'promotionView': 'view_promotion',
-    'promoClick': 'select_promotion',
-    'promotionClick': 'select_promotion'
-  };
+  var CURRENCY = 'BRL'; // a Tray nao envia currency no dataLayer
 
   function num(v) {
     if (v === null || v === undefined || v === '') { return undefined; }
-    var n = parseFloat(('' + v).replace(/[^0-9.,-]/g, '').replace(/\.(?=.*\.)/g, '').replace(',', '.'));
+    var n = parseFloat(('' + v).replace(/[^0-9.,-]/g, '').replace(',', '.'));
     return isNaN(n) ? undefined : n;
   }
+  function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
-  // Converte um produto UA/EEC para item GA4
-  function toItem(p, idx) {
-    if (!p) { return null; }
-    var item = {
-      item_id: p.id || p.item_id || p.sku || p.product_id,
-      item_name: p.name || p.item_name || p.title,
-      price: num(p.price != null ? p.price : p.item_price),
-      quantity: num(p.quantity != null ? p.quantity : (p.qty != null ? p.qty : 1)) || 1
-    };
-    if (p.brand || p.item_brand) { item.item_brand = p.brand || p.item_brand; }
-    if (p.variant || p.item_variant) { item.item_variant = p.variant || p.item_variant; }
-    if (p.coupon || p.item_coupon) { item.coupon = p.coupon || p.item_coupon; }
-    if (p.list || p.list_name || p.item_list_name) { item.item_list_name = p.list || p.list_name || p.item_list_name; }
-    if (p.position != null || p.index != null) { item.index = num(p.position != null ? p.position : p.index); }
-    // category / category2 / category3...
-    var cat = p.category || p.item_category;
-    if (cat) {
-      if (typeof cat === 'string' && cat.indexOf('/') > -1) {
-        var parts = cat.split('/');
-        item.item_category = parts[0];
-        for (var i = 1; i < parts.length && i <= 4; i++) {
-          item['item_category' + (i + 1)] = parts[i];
-        }
+  /* ---------- normalizacao de itens ---------- */
+
+  // categorias: aceita string "A/B" OU array categories:[{name,level}]
+  function applyCategories(item, catStr, catArr) {
+    if (catArr && catArr.length) {
+      var sorted = catArr.slice().sort(function (a, b) { return (a.level || 0) - (b.level || 0); });
+      for (var i = 0; i < sorted.length && i < 5; i++) {
+        item['item_category' + (i === 0 ? '' : (i + 1))] = sorted[i].name;
+      }
+    } else if (catStr) {
+      if (('' + catStr).indexOf('/') > -1) {
+        var p = ('' + catStr).split('/');
+        item.item_category = p[0];
+        for (var j = 1; j < p.length && j <= 4; j++) { item['item_category' + (j + 1)] = p[j]; }
       } else {
-        item.item_category = cat;
+        item.item_category = catStr;
       }
     }
+  }
+
+  // PRODUTO (formato achatado da pagina de produto)
+  function itemFromFlat(o) {
+    var item = {
+      item_id: o.idProduct,
+      item_name: o.nameProduct,
+      price: num(o.priceSell != null ? o.priceSell : o.price),
+      quantity: 1
+    };
+    if (o.brand) { item.item_brand = o.brand; }
+    if (o.EAN) { item.ean = o.EAN; }
+    // variante: usa o 1o SKU da lista, se houver
+    if (o.listSku && o.listSku.length && o.listSku[0].nameSku) {
+      item.item_variant = o.listSku[0].nameSku;
+    }
+    applyCategories(item, o.category, o.breadcrumbDetails);
+    return item;
+  }
+
+  // EEC (carrinho / checkout / compra)
+  function itemFromEEC(p) {
+    if (!p) { return null; }
+    var item = {
+      item_id: p.id || p.sku,
+      item_name: p.name,
+      price: num(p.price),
+      quantity: num(p.quantity) || 1
+    };
+    if (p.brand) { item.item_brand = p.brand; }
+    if (p.variant) { item.item_variant = p.variant; }
+    if (p.ean) { item.ean = p.ean; }
+    applyCategories(item, p.category, p.categories);
     if (item.item_id == null && item.item_name == null) { return null; }
     return item;
   }
 
-  function toItems(arr) {
+  function itemsFromEEC(arr) {
     var out = [];
-    if (!arr || !arr.length) { return out; }
+    if (!arr) { return out; }
     for (var i = 0; i < arr.length; i++) {
-      var it = toItem(arr[i], i);
+      var it = itemFromEEC(arr[i]);
       if (it) { out.push(it); }
     }
     return out;
@@ -109,123 +111,113 @@
 
   function sumValue(items) {
     var t = 0;
-    for (var i = 0; i < items.length; i++) {
-      t += (num(items[i].price) || 0) * (num(items[i].quantity) || 1);
-    }
-    return Math.round(t * 100) / 100;
+    for (var i = 0; i < items.length; i++) { t += (num(items[i].price) || 0) * (num(items[i].quantity) || 1); }
+    return round2(t);
   }
 
-  // Recebe um objeto pushado e devolve {event, ecommerce} no padrao GA4, ou null
-  function convert(obj) {
-    if (!obj || typeof obj !== 'object') { return null; }
-    var ev = obj.event;
-    if (!ev) { return null; }
-    if (GA4_NATIVE[ev]) { return null; } // ja GA4 -> nao converter
+  /* ---------- dados do cliente (compra) -> user_data ---------- */
+  function buildUserData(o) {
+    var d = o.visitorDemographicInfo || {};
+    function low(v) { return (v != null && ('' + v).trim() !== '') ? ('' + v).trim().toLowerCase() : undefined; }
+    function dig(v) { return v ? ('' + v).replace(/[^0-9]/g, '') : undefined; }
 
-    var ga4Event = MAP[ev];
-    if (!ga4Event) { return null; } // evento que nao nos interessa
+    var ud = {};
+    var email = low(o.email || o.customerEmail);
+    if (email) { ud.email = email; }
 
-    var ec = obj.ecommerce || {};
-    var currency = ec.currencyCode || ec.currency || obj.currencyCode || 'BRL';
-    var out = { event: ga4Event, ecommerce: { currency: currency } };
-    var block, items;
+    var full = (o.customerName || o.name || '').trim();
+    if (full) {
+      var parts = full.split(/\s+/);
+      ud.first_name = low(parts.shift());
+      if (parts.length) { ud.last_name = low(parts.join(' ')); }
+    }
+    var zip = dig(d.zipCode);
+    if (zip) { ud.postal_code = zip; }
+    if (low(d.city)) { ud.city = low(d.city); }
+    if (low(d.state)) { ud.region = low(d.state); }
+    ud.country = 'br';
 
-    switch (ga4Event) {
-      case 'view_item_list':
-        block = ec.impressions || (ec.items) || [];
-        items = toItems(block);
-        if (block[0] && (block[0].list || block[0].list_name)) {
-          out.ecommerce.item_list_name = block[0].list || block[0].list_name;
-        }
-        out.ecommerce.items = items;
-        break;
-      case 'select_item':
-        block = (ec.click && ec.click.products) || ec.products || [];
-        out.ecommerce.items = toItems(block);
-        break;
-      case 'view_item':
-        block = (ec.detail && ec.detail.products) || ec.products || [];
-        items = toItems(block);
-        out.ecommerce.items = items;
-        out.ecommerce.value = sumValue(items);
-        break;
-      case 'add_to_cart':
-        block = (ec.add && ec.add.products) || ec.products || [];
-        items = toItems(block);
-        out.ecommerce.items = items;
-        out.ecommerce.value = sumValue(items);
-        break;
-      case 'remove_from_cart':
-        block = (ec.remove && ec.remove.products) || ec.products || [];
-        items = toItems(block);
-        out.ecommerce.items = items;
-        out.ecommerce.value = sumValue(items);
-        break;
-      case 'begin_checkout':
-        block = (ec.checkout && ec.checkout.products) || ec.products || [];
-        items = toItems(block);
-        out.ecommerce.items = items;
-        out.ecommerce.value = sumValue(items);
-        var af = ec.checkout && ec.checkout.actionField;
-        if (af && af.option) { out.ecommerce.checkout_option = af.option; }
-        break;
-      case 'purchase':
-        var pf = (ec.purchase && ec.purchase.actionField) || ec.actionField || {};
-        block = (ec.purchase && ec.purchase.products) || ec.products || [];
-        items = toItems(block);
-        out.ecommerce.transaction_id = pf.id || pf.transaction_id || obj.transaction_id;
-        out.ecommerce.value = num(pf.revenue != null ? pf.revenue : pf.value);
-        if (out.ecommerce.value == null) { out.ecommerce.value = sumValue(items); }
-        if (pf.tax != null) { out.ecommerce.tax = num(pf.tax); }
-        if (pf.shipping != null) { out.ecommerce.shipping = num(pf.shipping); }
-        if (pf.coupon) { out.ecommerce.coupon = pf.coupon; }
-        if (pf.affiliation) { out.ecommerce.affiliation = pf.affiliation; }
-        out.ecommerce.items = items;
-        break;
-      case 'view_promotion':
-      case 'select_promotion':
-        var promo = ec.promoView || ec.promoClick || ec.promotion || {};
-        var promos = promo.promotions || ec.promotions || [];
-        if (promos[0]) {
-          out.ecommerce.promotion_id = promos[0].id;
-          out.ecommerce.promotion_name = promos[0].name;
-          out.ecommerce.creative_name = promos[0].creative;
-          out.ecommerce.creative_slot = promos[0].position;
-        }
-        out.ecommerce.items = [];
-        break;
-      default:
-        return null;
+    var ext = o.customerId || o.userId || o.visitorId;
+    if (ext) { ud.external_id = '' + ext; }
+
+    return (ud.email || ud.external_id) ? ud : undefined;
+  }
+
+  /* ---------- roteamento por evento/pageCategory ---------- */
+  function classify(o) {
+    var ev = ('' + (o.event || '')).toLowerCase();
+    var pc = ('' + (o.pageCategory || '')).toLowerCase();
+
+    if (ev === 'tray.updategtm' && pc.indexOf('produto') > -1) { return 'view_item'; }
+    if (ev === 'cart' || pc === 'carrinho') { return 'view_cart'; }
+    if (ev === 'purchase' || pc.indexOf('orderplaced') > -1) { return 'purchase'; }
+    if (ev === 'checkout' || pc.indexOf('easycheckout') > -1) {
+      if (pc.indexOf('payment') > -1) { return 'add_payment_info'; }
+      if (pc.indexOf('shipping') > -1 || pc.indexOf('delivery') > -1 || pc.indexOf('frete') > -1) { return 'add_shipping_info'; }
+      return 'begin_checkout'; // Identification / step 1 (default)
+    }
+    return null;
+  }
+
+  function convert(o) {
+    if (!o || typeof o !== 'object' || o.__trayNormalized) { return null; }
+    var kind = classify(o);
+    if (!kind) { return null; }
+
+    var out = { event: kind, __trayNormalized: true, ecommerce: { currency: CURRENCY } };
+    var ec = o.ecommerce || {};
+    var items;
+
+    if (kind === 'view_item') {
+      var it = itemFromFlat(o);
+      items = it ? [it] : [];
+      out.ecommerce.items = items;
+      out.ecommerce.value = sumValue(items);
+    } else if (kind === 'view_cart' || kind === 'begin_checkout' ||
+               kind === 'add_shipping_info' || kind === 'add_payment_info') {
+      items = itemsFromEEC((ec.checkout && ec.checkout.products) || ec.products);
+      out.ecommerce.items = items;
+      out.ecommerce.value = sumValue(items);
+      if (kind === 'add_payment_info' && ec.checkout && ec.checkout.actionField && ec.checkout.actionField.option) {
+        out.ecommerce.payment_type = ec.checkout.actionField.option;
+      }
+    } else if (kind === 'purchase') {
+      var pf = (ec.purchase && ec.purchase.actionField) || {};
+      items = itemsFromEEC((ec.purchase && ec.purchase.products) ||
+                           (ec.checkout && ec.checkout.products) || ec.products);
+      out.ecommerce.transaction_id = '' + (pf.id || '');
+      out.ecommerce.value = num(pf.revenue) != null ? num(pf.revenue) : sumValue(items);
+      if (num(pf.shipping) != null) { out.ecommerce.shipping = num(pf.shipping); }
+      if (num(pf.tax) != null) { out.ecommerce.tax = num(pf.tax); }
+      if (pf.coupon || pf.discountCode) { out.ecommerce.coupon = pf.coupon || pf.discountCode; }
+      if (pf.affiliation) { out.ecommerce.affiliation = pf.affiliation; }
+      out.ecommerce.items = items;
+
+      var ud = buildUserData(o);
+      if (ud) { out.user_data = ud; }
     }
 
-    // Repassa dados de usuario se a Tray tiver enviado junto
-    if (obj.user_data) { out.user_data = obj.user_data; }
-    if (obj.customer) { out.customer = obj.customer; }
     return out;
   }
 
-  function handle(obj) {
+  function handle(o) {
     try {
-      var converted = convert(obj);
-      if (converted) {
-        w.dataLayer.push({ ecommerce: null }); // limpa antes
-        w.dataLayer.push(converted);
+      var c = convert(o);
+      if (c) {
+        w.dataLayer.push({ ecommerce: null }); // limpa antes (evita vazar itens)
+        w.dataLayer.push(c);
       }
     } catch (e) { /* nunca quebrar a loja */ }
   }
 
-  // 1) Processa itens que ja estavam no dataLayer antes do adapter carregar
-  try {
-    for (var i = 0; i < w.dataLayer.length; i++) { handle(w.dataLayer[i]); }
-  } catch (e) {}
+  // 1) processa o que ja estava no dataLayer
+  try { for (var i = 0; i < w.dataLayer.length; i++) { handle(w.dataLayer[i]); } } catch (e) {}
 
-  // 2) Intercepta pushes futuros (sem quebrar o push nativo do GTM)
+  // 2) intercepta pushes futuros
   var origPush = w.dataLayer.push;
   w.dataLayer.push = function () {
     var res = origPush.apply(w.dataLayer, arguments);
-    try {
-      for (var j = 0; j < arguments.length; j++) { handle(arguments[j]); }
-    } catch (e) {}
+    try { for (var j = 0; j < arguments.length; j++) { handle(arguments[j]); } } catch (e) {}
     return res;
   };
 })();

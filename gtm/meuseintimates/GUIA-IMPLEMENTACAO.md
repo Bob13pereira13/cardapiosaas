@@ -161,25 +161,54 @@ Com o sGTM no subdomínio próprio, esses cookies são **first-party HttpOnly**,
 
 ---
 
-## 9) Eventos e parâmetros (padrão GA4 enviado)
+## 9) Eventos e parâmetros — MAPEAMENTO REAL desta loja
 
-| Evento GA4 | Meta | Quando | Parâmetros principais |
-|---|---|---|---|
-| `view_item_list` | ViewContent | lista/categoria | `items[]` |
-| `select_item` | — | clique no produto | `items[]` |
-| `view_item` | ViewContent | página do produto | `items[]`, `value`, `currency` |
-| `add_to_cart` | AddToCart | adicionar ao carrinho | `items[]`, `value`, `currency` |
-| `remove_from_cart` | — | remover do carrinho | `items[]` |
-| `view_cart` | ViewContent | ver carrinho | `items[]`, `value` |
-| `begin_checkout` | InitiateCheckout | iniciar checkout | `items[]`, `value`, `coupon` |
-| `add_shipping_info` | AddShippingInfo | etapa de frete | `items[]`, `shipping_tier` |
-| `add_payment_info` | AddPaymentInfo | etapa de pagamento | `items[]`, `payment_type` |
-| `purchase` | Purchase | pedido concluído | `transaction_id`, `value`, `tax`, `shipping`, `currency`, `items[]` |
-| `search` | Search | busca | `search_term` |
-| `sign_up` | CompleteRegistration | cadastro | — |
+O adapter (`src/adapter.js`) foi calibrado com os `dataLayer` reais da loja.
+A Tray **não** usa nomes GA4 nativos: ela dispara nomes próprios em **dois formatos**
+(produto = campos achatados na raiz; carrinho/checkout/compra = Enhanced Ecommerce).
+O roteamento é feito por `event` + `pageCategory`:
 
-Cada `item`: `item_id`, `item_name`, `price`, `quantity`, `item_brand`,
-`item_category`(1..5), `item_variant`, `index`, `coupon`.
+| `event` (Tray) | `pageCategory` (Tray) | → GA4 | → Meta | Origem dos dados |
+|---|---|---|---|---|
+| `tray.updateGTM` | `Produto` | `view_item` | ViewContent | raiz: `idProduct`, `nameProduct`, `priceSell`, `listSku[]`, `breadcrumbDetails` |
+| `cart` | `Carrinho` | `view_cart` | ViewContent | `ecommerce.checkout.products[]` |
+| `checkout` | `EasyCheckout_Identification` (step 1) | `begin_checkout` | InitiateCheckout | `ecommerce.checkout.products[]` |
+| `checkout` | `EasyCheckout_*Shipping/Delivery*` | `add_shipping_info` | AddShippingInfo | `ecommerce.checkout.products[]` |
+| `checkout` | `EasyCheckout_*Payment*` | `add_payment_info` | AddPaymentInfo | `ecommerce.checkout.products[]` + `option` |
+| `purchase` | `EasyCheckout_OrderPlaced` (step 6) | `purchase` | Purchase | `ecommerce.purchase.actionField` + `products[]` + cliente na raiz |
+
+**Mapeamento de campos (item):**
+
+| GA4 | Produto (raiz) | Carrinho/Checkout/Compra (EEC) |
+|---|---|---|
+| `item_id` | `idProduct` | `id` (fallback `sku`) |
+| `item_name` | `nameProduct` | `name` |
+| `price` | `priceSell` (fallback `price`) | `price` |
+| `quantity` | `1` | `quantity` |
+| `item_brand` | `brand` | `brand` |
+| `item_variant` | `listSku[0].nameSku` | `variant` |
+| `item_category`(1..5) | `category` / `breadcrumbDetails[]` | `category` / `categories[]` |
+| `ean` | `EAN` | `ean` |
+
+**Compra (`purchase`):** `transaction_id` ← `actionField.id`, `value` ← `revenue`,
+`shipping` ← `shipping`, `coupon` ← `coupon`/`discountCode`, `currency` = `BRL` (fixo).
+
+**`user_data` (Advanced Matching + CAPI):** preenchido a partir da compra e de qualquer
+página logada — `email`/`customerEmail`, `customerName`→`first/last_name`,
+`visitorDemographicInfo.zipCode/city/state`, e **`external_id`** ← `customerId`/`userId`/`visitorId`
+(este último presente em **todas** as páginas, então o match nunca fica zerado).
+
+> ⚠️ **`add_to_cart` (AddToCart):** nos dataLayers capturados a loja **não** emite um
+> evento ao clicar em "Comprar/Adicionar ao carrinho" — o evento `cart` que existe é a
+> **página do carrinho** (mapeada como `view_cart`). Se você quiser o `add_to_cart`
+> (recomendado p/ funil e otimização do Meta/Ads), confirme: ao clicar no botão de
+> adicionar, surge algo novo no `dataLayer`? Se **não**, crie no GTM Web um gatilho de
+> **clique** no botão (ex.: seletor do botão "Comprar" / `Click Element matches CSS`) e
+> uma tag GA4 `add_to_cart` lendo o produto da página. Me avise que eu já deixo pronto.
+
+> Os eventos `view_item_list`, `select_item`, `remove_from_cart`, `search`, `sign_up`
+> ficam suportados no GTM, mas **só dispararão** se a Tray (ou um gatilho extra)
+> fornecer o dado correspondente. Hoje não vimos esses no dataLayer.
 
 ---
 
