@@ -1,0 +1,64 @@
+<script>
+/*
+ * Meta Pixel - EVENTOS de ecommerce (navegador)
+ * Dispara nos eventos GA4 normalizados (view_item, add_to_cart, ... purchase).
+ * Usa o MESMO event_id do servidor (CAPI) -> deduplicacao.
+ * Le o objeto ecommerce padrao GA4 e converte para os parametros do Meta.
+ */
+(function () {
+  if (typeof fbq !== 'function') { return; }
+
+  var ev = {{Event}};
+  var ec = {{DLV - ecommerce}} || {};
+  var eid = {{CJS - event_id}};
+  var ud = {{CJS - user_data}};
+
+  // se vierem dados de usuario nesta pagina, reforca o Advanced Matching
+  if (ud) { try { fbq('init', {{Const - Meta Pixel ID}}, ud); } catch (e) {} }
+
+  // GA4 event -> Meta standard event
+  var MAP = {
+    view_item: 'ViewContent',
+    view_item_list: 'ViewContent',
+    add_to_cart: 'AddToCart',
+    add_to_wishlist: 'AddToWishlist',
+    begin_checkout: 'InitiateCheckout',
+    add_payment_info: 'AddPaymentInfo',
+    add_shipping_info: 'AddShippingInfo',
+    purchase: 'Purchase',
+    search: 'Search',
+    sign_up: 'CompleteRegistration',
+    view_cart: 'ViewContent'
+  };
+  var metaEvent = MAP[ev];
+  if (!metaEvent) { return; }
+
+  var items = ec.items || [];
+  var contents = [];
+  var ids = [];
+  var numItems = 0;
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var id = it.item_id || it.id;
+    var q = parseInt(it.quantity, 10) || 1;
+    if (id != null) { ids.push('' + id); }
+    contents.push({ id: '' + id, quantity: q, item_price: parseFloat(it.price) || undefined });
+    numItems += q;
+  }
+
+  var params = {
+    currency: ec.currency || 'BRL',
+    content_type: 'product'
+  };
+  if (ec.value != null) { params.value = parseFloat(ec.value); }
+  if (ids.length) { params.content_ids = ids; }
+  if (contents.length) { params.contents = contents; }
+  if (numItems) { params.num_items = numItems; }
+  if (ev === 'purchase' && ec.transaction_id) { params.order_id = ec.transaction_id; }
+  if (ev === 'search') { var q = {{DLV - search_term}}; if (q) { params.search_string = q; } }
+  if (items[0] && items[0].item_name) { params.content_name = items[0].item_name; }
+  if (items[0] && items[0].item_category) { params.content_category = items[0].item_category; }
+
+  fbq('track', metaEvent, params, eid ? { eventID: eid } : undefined);
+})();
+</script>

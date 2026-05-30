@@ -1,0 +1,912 @@
+{
+  "exportFormatVersion": 2,
+  "exportTime": "2026-05-30T15:35:46.770Z",
+  "containerVersion": {
+    "path": "accounts/0/containers/0/versions/0",
+    "accountId": "0",
+    "containerId": "0",
+    "containerVersionId": "0",
+    "name": "Meuseintimates - WEB v1",
+    "container": {
+      "path": "accounts/0/containers/0",
+      "accountId": "0",
+      "containerId": "0",
+      "name": "meuseintimates.com.br WEB",
+      "publicId": "GTM-WEBMEUSE",
+      "usageContext": [
+        "WEB"
+      ],
+      "fingerprint": "0",
+      "tagManagerUrl": ""
+    },
+    "tag": [
+      {
+        "tagId": "1",
+        "name": "Consent - Default (denied)",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n/*\n * Consent Mode v2 - estado PADRAO (negado) | LGPD\n * Dispara no gatilho \"Consent Initialization - All Pages\" (antes de tudo).\n *\n * Como integrar com seu banner de cookies (CMP):\n *  - Quando o usuario ACEITAR, o banner deve chamar:\n *      gtag('consent','update',{\n *        ad_storage:'granted', ad_user_data:'granted',\n *        ad_personalization:'granted', analytics_storage:'granted'\n *      });\n *    (ou empurrar dataLayer.push({event:'consent_update', ...}) e voce cria\n *     uma tag de update — veja o GUIA).\n *  - Se voce usa um CMP certificado (Cookiebot, Osano, Iubenda, etc.), use o\n *    template oficial dele e pode REMOVER esta tag.\n */\nwindow.dataLayer = window.dataLayer || [];\nfunction gtag() { dataLayer.push(arguments); }\n\n// Padrao: tudo negado ate o usuario consentir (region BR)\ngtag('consent', 'default', {\n  ad_storage: 'denied',\n  ad_user_data: 'denied',\n  ad_personalization: 'denied',\n  analytics_storage: 'denied',\n  functionality_storage: 'granted',\n  security_storage: 'granted',\n  wait_for_update: 500\n});\n\n// Ads/Analytics ainda enviam pings sem cookies (modeling) enquanto negado\ngtag('set', 'ads_data_redaction', true);\ngtag('set', 'url_passthrough', true);\n</script>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "2147479572"
+        ],
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "2",
+        "name": "Tray DataLayer Adapter",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n/*\n * Tray -> GA4 dataLayer Adapter  |  meuseintimates.com.br\n * ------------------------------------------------------------------\n * Objetivo: deixar o tagueamento \"100% redondo\" independente do formato\n * que a Tray usar. A Tray pode empurrar eventos no formato antigo\n * (Universal Analytics / Enhanced Ecommerce) OU no formato GA4. Este\n * adapter:\n *   1) Escuta tudo que entra no dataLayer (push original + itens ja existentes)\n *   2) Se o evento ja estiver no padrao GA4 (tem ecommerce.items) -> passa direto\n *   3) Se estiver no padrao UA/EEC (ecommerce.detail/add/remove/checkout/...)\n *      -> converte para o evento GA4 equivalente com ecommerce.items\n *   4) Sempre limpa ecommerce (ecommerce:null) antes de empurrar o normalizado,\n *      evitando \"vazamento\" de itens entre eventos.\n *\n * IMPORTANTE: valide no GTM Preview os NOMES de evento que a Tray dispara\n * e ajuste o mapa MAP abaixo se necessario. Tudo esta centralizado aqui.\n */\n(function () {\n  var w = window;\n  w.dataLayer = w.dataLayer || [];\n  if (w.__trayGa4AdapterLoaded) { return; }\n  w.__trayGa4AdapterLoaded = true;\n\n  // Eventos que ja sao GA4 nativos -> nao mexer\n  var GA4_NATIVE = {\n    view_item: 1, view_item_list: 1, select_item: 1, add_to_cart: 1,\n    remove_from_cart: 1, view_cart: 1, begin_checkout: 1, add_shipping_info: 1,\n    add_payment_info: 1, purchase: 1, refund: 1, view_promotion: 1,\n    select_promotion: 1, search: 1, sign_up: 1, login: 1, add_to_wishlist: 1\n  };\n\n  // Mapa de nomes de evento UA/Tray -> evento GA4\n  var MAP = {\n    'productImpression': 'view_item_list',\n    'eec.impressionView': 'view_item_list',\n    'impressionView': 'view_item_list',\n    'impressions': 'view_item_list',\n    'productClick': 'select_item',\n    'eec.productClick': 'select_item',\n    'productDetail': 'view_item',\n    'eec.detail': 'view_item',\n    'detail': 'view_item',\n    'productView': 'view_item',\n    'addToCart': 'add_to_cart',\n    'eec.add': 'add_to_cart',\n    'add': 'add_to_cart',\n    'removeFromCart': 'remove_from_cart',\n    'eec.remove': 'remove_from_cart',\n    'remove': 'remove_from_cart',\n    'checkout': 'begin_checkout',\n    'eec.checkout': 'begin_checkout',\n    'beginCheckout': 'begin_checkout',\n    'purchase': 'purchase',\n    'eec.purchase': 'purchase',\n    'transaction': 'purchase',\n    'promoView': 'view_promotion',\n    'promotionView': 'view_promotion',\n    'promoClick': 'select_promotion',\n    'promotionClick': 'select_promotion'\n  };\n\n  function num(v) {\n    if (v === null || v === undefined || v === '') { return undefined; }\n    var n = parseFloat(('' + v).replace(/[^0-9.,-]/g, '').replace(/\\.(?=.*\\.)/g, '').replace(',', '.'));\n    return isNaN(n) ? undefined : n;\n  }\n\n  // Converte um produto UA/EEC para item GA4\n  function toItem(p, idx) {\n    if (!p) { return null; }\n    var item = {\n      item_id: p.id || p.item_id || p.sku || p.product_id,\n      item_name: p.name || p.item_name || p.title,\n      price: num(p.price != null ? p.price : p.item_price),\n      quantity: num(p.quantity != null ? p.quantity : (p.qty != null ? p.qty : 1)) || 1\n    };\n    if (p.brand || p.item_brand) { item.item_brand = p.brand || p.item_brand; }\n    if (p.variant || p.item_variant) { item.item_variant = p.variant || p.item_variant; }\n    if (p.coupon || p.item_coupon) { item.coupon = p.coupon || p.item_coupon; }\n    if (p.list || p.list_name || p.item_list_name) { item.item_list_name = p.list || p.list_name || p.item_list_name; }\n    if (p.position != null || p.index != null) { item.index = num(p.position != null ? p.position : p.index); }\n    // category / category2 / category3...\n    var cat = p.category || p.item_category;\n    if (cat) {\n      if (typeof cat === 'string' && cat.indexOf('/') > -1) {\n        var parts = cat.split('/');\n        item.item_category = parts[0];\n        for (var i = 1; i < parts.length && i <= 4; i++) {\n          item['item_category' + (i + 1)] = parts[i];\n        }\n      } else {\n        item.item_category = cat;\n      }\n    }\n    if (item.item_id == null && item.item_name == null) { return null; }\n    return item;\n  }\n\n  function toItems(arr) {\n    var out = [];\n    if (!arr || !arr.length) { return out; }\n    for (var i = 0; i < arr.length; i++) {\n      var it = toItem(arr[i], i);\n      if (it) { out.push(it); }\n    }\n    return out;\n  }\n\n  function sumValue(items) {\n    var t = 0;\n    for (var i = 0; i < items.length; i++) {\n      t += (num(items[i].price) || 0) * (num(items[i].quantity) || 1);\n    }\n    return Math.round(t * 100) / 100;\n  }\n\n  // Recebe um objeto pushado e devolve {event, ecommerce} no padrao GA4, ou null\n  function convert(obj) {\n    if (!obj || typeof obj !== 'object') { return null; }\n    var ev = obj.event;\n    if (!ev) { return null; }\n    if (GA4_NATIVE[ev]) { return null; } // ja GA4 -> nao converter\n\n    var ga4Event = MAP[ev];\n    if (!ga4Event) { return null; } // evento que nao nos interessa\n\n    var ec = obj.ecommerce || {};\n    var currency = ec.currencyCode || ec.currency || obj.currencyCode || 'BRL';\n    var out = { event: ga4Event, ecommerce: { currency: currency } };\n    var block, items;\n\n    switch (ga4Event) {\n      case 'view_item_list':\n        block = ec.impressions || (ec.items) || [];\n        items = toItems(block);\n        if (block[0] && (block[0].list || block[0].list_name)) {\n          out.ecommerce.item_list_name = block[0].list || block[0].list_name;\n        }\n        out.ecommerce.items = items;\n        break;\n      case 'select_item':\n        block = (ec.click && ec.click.products) || ec.products || [];\n        out.ecommerce.items = toItems(block);\n        break;\n      case 'view_item':\n        block = (ec.detail && ec.detail.products) || ec.products || [];\n        items = toItems(block);\n        out.ecommerce.items = items;\n        out.ecommerce.value = sumValue(items);\n        break;\n      case 'add_to_cart':\n        block = (ec.add && ec.add.products) || ec.products || [];\n        items = toItems(block);\n        out.ecommerce.items = items;\n        out.ecommerce.value = sumValue(items);\n        break;\n      case 'remove_from_cart':\n        block = (ec.remove && ec.remove.products) || ec.products || [];\n        items = toItems(block);\n        out.ecommerce.items = items;\n        out.ecommerce.value = sumValue(items);\n        break;\n      case 'begin_checkout':\n        block = (ec.checkout && ec.checkout.products) || ec.products || [];\n        items = toItems(block);\n        out.ecommerce.items = items;\n        out.ecommerce.value = sumValue(items);\n        var af = ec.checkout && ec.checkout.actionField;\n        if (af && af.option) { out.ecommerce.checkout_option = af.option; }\n        break;\n      case 'purchase':\n        var pf = (ec.purchase && ec.purchase.actionField) || ec.actionField || {};\n        block = (ec.purchase && ec.purchase.products) || ec.products || [];\n        items = toItems(block);\n        out.ecommerce.transaction_id = pf.id || pf.transaction_id || obj.transaction_id;\n        out.ecommerce.value = num(pf.revenue != null ? pf.revenue : pf.value);\n        if (out.ecommerce.value == null) { out.ecommerce.value = sumValue(items); }\n        if (pf.tax != null) { out.ecommerce.tax = num(pf.tax); }\n        if (pf.shipping != null) { out.ecommerce.shipping = num(pf.shipping); }\n        if (pf.coupon) { out.ecommerce.coupon = pf.coupon; }\n        if (pf.affiliation) { out.ecommerce.affiliation = pf.affiliation; }\n        out.ecommerce.items = items;\n        break;\n      case 'view_promotion':\n      case 'select_promotion':\n        var promo = ec.promoView || ec.promoClick || ec.promotion || {};\n        var promos = promo.promotions || ec.promotions || [];\n        if (promos[0]) {\n          out.ecommerce.promotion_id = promos[0].id;\n          out.ecommerce.promotion_name = promos[0].name;\n          out.ecommerce.creative_name = promos[0].creative;\n          out.ecommerce.creative_slot = promos[0].position;\n        }\n        out.ecommerce.items = [];\n        break;\n      default:\n        return null;\n    }\n\n    // Repassa dados de usuario se a Tray tiver enviado junto\n    if (obj.user_data) { out.user_data = obj.user_data; }\n    if (obj.customer) { out.customer = obj.customer; }\n    return out;\n  }\n\n  function handle(obj) {\n    try {\n      var converted = convert(obj);\n      if (converted) {\n        w.dataLayer.push({ ecommerce: null }); // limpa antes\n        w.dataLayer.push(converted);\n      }\n    } catch (e) { /* nunca quebrar a loja */ }\n  }\n\n  // 1) Processa itens que ja estavam no dataLayer antes do adapter carregar\n  try {\n    for (var i = 0; i < w.dataLayer.length; i++) { handle(w.dataLayer[i]); }\n  } catch (e) {}\n\n  // 2) Intercepta pushes futuros (sem quebrar o push nativo do GTM)\n  var origPush = w.dataLayer.push;\n  w.dataLayer.push = function () {\n    var res = origPush.apply(w.dataLayer, arguments);\n    try {\n      for (var j = 0; j < arguments.length; j++) { handle(arguments[j]); }\n    } catch (e) {}\n    return res;\n  };\n})();\n</script>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "2147479571"
+        ],
+        "priority": {
+          "type": "INTEGER",
+          "value": "100"
+        },
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "3",
+        "name": "GA4 - Configuration",
+        "type": "gaawc",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "measurementId",
+            "value": "{{Const - GA4 Measurement ID}}"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "enableSendToServerContainer",
+            "value": "true"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "serverContainerUrl",
+            "value": "{{Const - sGTM URL}}"
+          },
+          {
+            "type": "LIST",
+            "key": "fieldsToSet",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "first_party_collection"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "true"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "firingTriggerId": [
+          "2147479553"
+        ],
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "4",
+        "name": "GA4 - Ecommerce Events",
+        "type": "gaawe",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "eventName",
+            "value": "{{Event}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "measurementId",
+            "value": "{{Const - GA4 Measurement ID}}"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "sendEcommerceData",
+            "value": "true"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "ecommerceMacroData",
+            "value": "dataLayer"
+          },
+          {
+            "type": "LIST",
+            "key": "eventParameters",
+            "list": [
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "event_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - event_id}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "em"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_em}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "ph"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_ph}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "fn"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_fn}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "ln"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_ln}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "ct"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_ct}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "st"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_st}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "zp"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_zp}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "country"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_country}}"
+                  }
+                ]
+              },
+              {
+                "type": "MAP",
+                "map": [
+                  {
+                    "type": "TEMPLATE",
+                    "key": "name",
+                    "value": "external_id"
+                  },
+                  {
+                    "type": "TEMPLATE",
+                    "key": "value",
+                    "value": "{{CJS - ud_external_id}}"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "firingTriggerId": [
+          "1"
+        ],
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "5",
+        "name": "Meta Pixel - Base + PageView",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n/*\n * Meta Pixel - BASE (carrega o fbq + init com Advanced Matching + PageView)\n * Dispara em: All Pages (apos consentimento, se Consent Mode estiver ligado).\n * Pixel ID e injetado pelo GTM via {{Const - Meta Pixel ID}}.\n */\n!function (f, b, e, v, n, t, s) {\n  if (f.fbq) return; n = f.fbq = function () {\n    n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);\n  };\n  if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';\n  n.queue = []; t = b.createElement(e); t.async = !0; t.src = v;\n  s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);\n}(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');\n\n(function () {\n  var PIXEL_ID = {{Const - Meta Pixel ID}};\n  var ud = {{CJS - user_data}};\n  if (ud) { fbq('init', PIXEL_ID, ud); } else { fbq('init', PIXEL_ID); }\n\n  var eid = {{CJS - event_id}};\n  fbq('track', 'PageView', {}, eid ? { eventID: eid } : undefined);\n})();\n</script>\n<noscript>\n  <img height=\"1\" width=\"1\" style=\"display:none\"\n       src=\"https://www.facebook.com/tr?id={{Const - Meta Pixel ID}}&ev=PageView&noscript=1\" />\n</noscript>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "2147479553"
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "key": "",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "6",
+        "name": "Meta Pixel - Ecommerce Events",
+        "type": "html",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "html",
+            "value": "<script>\n/*\n * Meta Pixel - EVENTOS de ecommerce (navegador)\n * Dispara nos eventos GA4 normalizados (view_item, add_to_cart, ... purchase).\n * Usa o MESMO event_id do servidor (CAPI) -> deduplicacao.\n * Le o objeto ecommerce padrao GA4 e converte para os parametros do Meta.\n */\n(function () {\n  if (typeof fbq !== 'function') { return; }\n\n  var ev = {{Event}};\n  var ec = {{DLV - ecommerce}} || {};\n  var eid = {{CJS - event_id}};\n  var ud = {{CJS - user_data}};\n\n  // se vierem dados de usuario nesta pagina, reforca o Advanced Matching\n  if (ud) { try { fbq('init', {{Const - Meta Pixel ID}}, ud); } catch (e) {} }\n\n  // GA4 event -> Meta standard event\n  var MAP = {\n    view_item: 'ViewContent',\n    view_item_list: 'ViewContent',\n    add_to_cart: 'AddToCart',\n    add_to_wishlist: 'AddToWishlist',\n    begin_checkout: 'InitiateCheckout',\n    add_payment_info: 'AddPaymentInfo',\n    add_shipping_info: 'AddShippingInfo',\n    purchase: 'Purchase',\n    search: 'Search',\n    sign_up: 'CompleteRegistration',\n    view_cart: 'ViewContent'\n  };\n  var metaEvent = MAP[ev];\n  if (!metaEvent) { return; }\n\n  var items = ec.items || [];\n  var contents = [];\n  var ids = [];\n  var numItems = 0;\n  for (var i = 0; i < items.length; i++) {\n    var it = items[i];\n    var id = it.item_id || it.id;\n    var q = parseInt(it.quantity, 10) || 1;\n    if (id != null) { ids.push('' + id); }\n    contents.push({ id: '' + id, quantity: q, item_price: parseFloat(it.price) || undefined });\n    numItems += q;\n  }\n\n  var params = {\n    currency: ec.currency || 'BRL',\n    content_type: 'product'\n  };\n  if (ec.value != null) { params.value = parseFloat(ec.value); }\n  if (ids.length) { params.content_ids = ids; }\n  if (contents.length) { params.contents = contents; }\n  if (numItems) { params.num_items = numItems; }\n  if (ev === 'purchase' && ec.transaction_id) { params.order_id = ec.transaction_id; }\n  if (ev === 'search') { var q = {{DLV - search_term}}; if (q) { params.search_string = q; } }\n  if (items[0] && items[0].item_name) { params.content_name = items[0].item_name; }\n  if (items[0] && items[0].item_category) { params.content_category = items[0].item_category; }\n\n  fbq('track', metaEvent, params, eid ? { eventID: eid } : undefined);\n})();\n</script>\n"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "supportDocumentWrite",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "1"
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "key": "",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "7",
+        "name": "Google Ads - Conversion Linker",
+        "type": "lcl",
+        "parameter": [
+          {
+            "type": "BOOLEAN",
+            "key": "enableCrossDomain",
+            "value": "false"
+          }
+        ],
+        "firingTriggerId": [
+          "2147479553"
+        ],
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "8",
+        "name": "Google Ads - Remarketing",
+        "type": "sp",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "conversionId",
+            "value": "{{Const - Google Ads ID (numerico)}}"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "enableConversionLinker",
+            "value": "true"
+          }
+        ],
+        "firingTriggerId": [
+          "2147479553"
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "key": "",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "tagFiringOption": "oncePerEvent"
+      },
+      {
+        "tagId": "9",
+        "name": "Google Ads - Conversao Compra",
+        "type": "awct",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "conversionId",
+            "value": "{{Const - Google Ads ID (numerico)}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "conversionLabel",
+            "value": "{{Const - Google Ads Purchase Label}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "conversionValue",
+            "value": "{{DLV - ecommerce.value}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "currencyCode",
+            "value": "{{DLV - ecommerce.currency}}"
+          },
+          {
+            "type": "TEMPLATE",
+            "key": "orderId",
+            "value": "{{DLV - ecommerce.transaction_id}}"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "enableConversionLinker",
+            "value": "true"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "enableEnhancedConversions",
+            "value": "true"
+          }
+        ],
+        "firingTriggerId": [
+          "2"
+        ],
+        "consentSettings": {
+          "consentStatus": "NEEDED",
+          "consentType": {
+            "type": "LIST",
+            "list": [
+              {
+                "type": "TEMPLATE",
+                "key": "",
+                "value": "ad_storage"
+              }
+            ]
+          }
+        },
+        "tagFiringOption": "oncePerEvent"
+      }
+    ],
+    "trigger": [
+      {
+        "triggerId": "1",
+        "name": "CE - Ecommerce Events",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "MATCH_REGEX",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "^(view_item|view_item_list|select_item|add_to_cart|remove_from_cart|view_cart|begin_checkout|add_shipping_info|add_payment_info|purchase|view_promotion|select_promotion|search|sign_up)$"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "triggerId": "2",
+        "name": "CE - purchase",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "EQUALS",
+            "parameter": [
+              {
+                "type": "TEMPLATE",
+                "key": "arg0",
+                "value": "{{_event}}"
+              },
+              {
+                "type": "TEMPLATE",
+                "key": "arg1",
+                "value": "purchase"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "variable": [
+      {
+        "variableId": "1",
+        "name": "Const - GA4 Measurement ID",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "G-XXXXXXXXXX"
+          }
+        ]
+      },
+      {
+        "variableId": "2",
+        "name": "Const - sGTM URL",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "https://sgtm.meuseintimates.com.br"
+          }
+        ]
+      },
+      {
+        "variableId": "3",
+        "name": "Const - Meta Pixel ID",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "000000000000000"
+          }
+        ]
+      },
+      {
+        "variableId": "4",
+        "name": "Const - Google Ads ID (numerico)",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "000000000"
+          }
+        ]
+      },
+      {
+        "variableId": "5",
+        "name": "Const - Google Ads Purchase Label",
+        "type": "c",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "value",
+            "value": "XXXXXXXXXXXXXXXXX"
+          }
+        ]
+      },
+      {
+        "variableId": "6",
+        "name": "DLV - ecommerce",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "ecommerce"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "7",
+        "name": "DLV - gtm.uniqueEventId",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "gtm.uniqueEventId"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "8",
+        "name": "DLV - event_id",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "event_id"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "9",
+        "name": "DLV - search_term",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "search_term"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "10",
+        "name": "DLV - ecommerce.value",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "ecommerce.value"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "11",
+        "name": "DLV - ecommerce.currency",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "ecommerce.currency"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "12",
+        "name": "DLV - ecommerce.transaction_id",
+        "type": "v",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "name",
+            "value": "ecommerce.transaction_id"
+          },
+          {
+            "type": "INTEGER",
+            "key": "dataLayerVersion",
+            "value": "2"
+          },
+          {
+            "type": "BOOLEAN",
+            "key": "setDefaultValue",
+            "value": "false"
+          }
+        ]
+      },
+      {
+        "variableId": "13",
+        "name": "CJS - event_id",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function () {\n  /*\n   * Gera um event_id estavel POR EVENTO do GTM.\n   * O mesmo valor e usado pelo Meta Pixel (navegador) e enviado ao GA4 ->\n   * sGTM -> Meta CAPI, permitindo a DEDUPLICACAO browser x server.\n   * Cacheado por gtm.uniqueEventId para que todas as tags do mesmo\n   * disparo recebam exatamente o mesmo id.\n   */\n  try {\n    var uid = {{DLV - gtm.uniqueEventId}};\n    var dlEid = {{DLV - event_id}};\n    if (dlEid) { return dlEid; } // se a Tray/dataLayer ja forneceu um id, respeita\n    window.__eidCache = window.__eidCache || {};\n    var key = (uid != null) ? ('u' + uid) : 'nouid';\n    if (!window.__eidCache[key]) {\n      var rnd = (typeof crypto !== 'undefined' && crypto.getRandomValues)\n        ? (function () {\n            var a = new Uint32Array(4); crypto.getRandomValues(a);\n            return a[0].toString(16) + a[1].toString(16) + a[2].toString(16) + a[3].toString(16);\n          })()\n        : (Date.now().toString(16) + Math.random().toString(16).slice(2));\n      window.__eidCache[key] = 'evt.' + Date.now() + '.' + rnd;\n    }\n    return window.__eidCache[key];\n  } catch (e) {\n    return 'evt.' + (new Date().getTime()) + '.' + Math.floor(Math.random() * 1e9);\n  }\n}\n"
+          }
+        ]
+      },
+      {
+        "variableId": "14",
+        "name": "CJS - user_data",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function () {\n  /*\n   * Monta o objeto user_data (Advanced Matching / Enhanced Conversions).\n   * Le os dados do cliente que a Tray expoe no dataLayer (varios formatos\n   * possiveis) e devolve SO os campos preenchidos. Valores vao em texto\n   * normalizado (lowercase/trim); o hash SHA-256 e feito:\n   *   - pelo proprio Pixel (fbq) no navegador, e\n   *   - pelo container Server (CAPI / Enhanced Conversions) no envio CAPI.\n   * Nunca incluir campo vazio (piora o Event Match Quality e gera warning).\n   */\n  try {\n    var dl = window.dataLayer || [];\n    // procura o objeto de cliente mais recente no dataLayer\n    var c = {};\n    for (var i = dl.length - 1; i >= 0; i--) {\n      var e = dl[i];\n      if (!e || typeof e !== 'object') { continue; }\n      var cand = e.user_data || e.customer || e.user || e.usuario || e.cliente;\n      if (cand && typeof cand === 'object') { c = cand; break; }\n    }\n\n    function pick() {\n      for (var k = 0; k < arguments.length; k++) {\n        var v = arguments[k];\n        if (v !== undefined && v !== null && ('' + v).trim() !== '') { return ('' + v).trim(); }\n      }\n      return undefined;\n    }\n    function low(v) { return v ? v.toLowerCase() : v; }\n    function digits(v) { return v ? v.replace(/[^0-9]/g, '') : v; }\n    function phoneE164(v) {\n      if (!v) { return v; }\n      var d = digits(v);\n      if (!d) { return undefined; }\n      if (d.charAt(0) === '0') { d = d.replace(/^0+/, ''); }\n      // assume Brasil quando vier sem DDI (10/11 digitos)\n      if (d.length === 10 || d.length === 11) { d = '55' + d; }\n      return '+' + d;\n    }\n\n    var out = {};\n    var email = low(pick(c.email, c.em, c.e_mail, c.mail));\n    var phone = phoneE164(pick(c.phone, c.ph, c.telefone, c.celular, c.tel, c.whatsapp));\n    var fn = low(pick(c.first_name, c.fn, c.firstName, c.nome, c.primeiro_nome));\n    var ln = low(pick(c.last_name, c.ln, c.lastName, c.sobrenome, c.ultimo_nome));\n    var city = low(pick(c.city, c.ct, c.cidade));\n    var st = low(pick(c.state, c.st, c.estado, c.uf));\n    var zip = digits(pick(c.zip, c.zp, c.postal_code, c.cep));\n    var country = low(pick(c.country, c.pais)) || 'br';\n    var extId = pick(c.external_id, c.id, c.customer_id, c.cliente_id, c.codigo);\n\n    // se nome veio junto, separa\n    if (!fn && !ln) {\n      var full = pick(c.name, c.nome_completo, c.full_name);\n      if (full) { var p = full.split(/\\s+/); fn = low(p.shift()); ln = low(p.join(' ')) || undefined; }\n    }\n\n    if (email) { out.email = email; out.em = email; out.sha256_email_address = email; }\n    if (phone) { out.phone_number = phone; out.ph = phone; }\n    if (fn) { out.first_name = fn; out.fn = fn; }\n    if (ln) { out.last_name = ln; out.ln = ln; }\n    if (city) { out.city = city; out.ct = city; }\n    if (st) { out.region = st; out.st = st; }\n    if (zip) { out.postal_code = zip; out.zp = zip; }\n    if (country) { out.country = country; }\n    if (extId) { out.external_id = '' + extId; }\n\n    // sem nenhum dado pessoal? devolve undefined para nao mandar objeto vazio\n    return (out.email || out.phone_number || out.external_id) ? out : undefined;\n  } catch (e) {\n    return undefined;\n  }\n}\n"
+          }
+        ]
+      },
+      {
+        "variableId": "15",
+        "name": "CJS - ud_em",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.email)?u.email:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "16",
+        "name": "CJS - ud_ph",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.phone_number)?u.phone_number:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "17",
+        "name": "CJS - ud_fn",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.first_name)?u.first_name:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "18",
+        "name": "CJS - ud_ln",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.last_name)?u.last_name:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "19",
+        "name": "CJS - ud_ct",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.city)?u.city:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "20",
+        "name": "CJS - ud_st",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.region)?u.region:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "21",
+        "name": "CJS - ud_zp",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.postal_code)?u.postal_code:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "22",
+        "name": "CJS - ud_country",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.country)?u.country:undefined;}"
+          }
+        ]
+      },
+      {
+        "variableId": "23",
+        "name": "CJS - ud_external_id",
+        "type": "jsm",
+        "parameter": [
+          {
+            "type": "TEMPLATE",
+            "key": "javascript",
+            "value": "function(){var u={{CJS - user_data}};return (u&&u.external_id)?u.external_id:undefined;}"
+          }
+        ]
+      }
+    ],
+    "builtInVariable": [
+      {
+        "type": "PAGE_URL"
+      },
+      {
+        "type": "PAGE_HOSTNAME"
+      },
+      {
+        "type": "PAGE_PATH"
+      },
+      {
+        "type": "REFERRER"
+      },
+      {
+        "type": "EVENT"
+      },
+      {
+        "type": "CONTAINER_ID"
+      },
+      {
+        "type": "CONTAINER_VERSION"
+      },
+      {
+        "type": "RANDOM_NUMBER"
+      },
+      {
+        "type": "DEBUG_MODE"
+      },
+      {
+        "type": "CLICK_URL"
+      },
+      {
+        "type": "CLICK_TEXT"
+      }
+    ],
+    "fingerprint": "0"
+  }
+}

@@ -1,0 +1,34 @@
+<script>
+/*
+ * Consent Mode v2 - estado PADRAO (negado) | LGPD
+ * Dispara no gatilho "Consent Initialization - All Pages" (antes de tudo).
+ *
+ * Como integrar com seu banner de cookies (CMP):
+ *  - Quando o usuario ACEITAR, o banner deve chamar:
+ *      gtag('consent','update',{
+ *        ad_storage:'granted', ad_user_data:'granted',
+ *        ad_personalization:'granted', analytics_storage:'granted'
+ *      });
+ *    (ou empurrar dataLayer.push({event:'consent_update', ...}) e voce cria
+ *     uma tag de update — veja o GUIA).
+ *  - Se voce usa um CMP certificado (Cookiebot, Osano, Iubenda, etc.), use o
+ *    template oficial dele e pode REMOVER esta tag.
+ */
+window.dataLayer = window.dataLayer || [];
+function gtag() { dataLayer.push(arguments); }
+
+// Padrao: tudo negado ate o usuario consentir (region BR)
+gtag('consent', 'default', {
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+  analytics_storage: 'denied',
+  functionality_storage: 'granted',
+  security_storage: 'granted',
+  wait_for_update: 500
+});
+
+// Ads/Analytics ainda enviam pings sem cookies (modeling) enquanto negado
+gtag('set', 'ads_data_redaction', true);
+gtag('set', 'url_passthrough', true);
+</script>
